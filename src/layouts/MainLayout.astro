@@ -1,5 +1,6 @@
 ---
 const { title } = Astro.props;
+import EmailModalWindow from "../components/EmailModalWindow";
 import Navigation from "../components/Navigation.astro";
 import "../styles/Fonts.css";
 ---
@@ -15,6 +16,7 @@ import "../styles/Fonts.css";
     <title>{title} | Dopis</title>
   </head>
   <body>
+    <EmailModalWindow />
     <Navigation />
     <slot />
   </body>
