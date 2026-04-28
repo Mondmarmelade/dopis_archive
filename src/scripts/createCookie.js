@@ -8,6 +8,6 @@ export function createCookie({ data, context }) {
   context.cookies.set("auth", encryptData(data), {
     path: "/",
     httpOnly: true,
-    secure: true,
+    secure: import.meta.env.PROD,
   });
 }
