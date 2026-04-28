@@ -1,45 +1,56 @@
 ---
 import { Icon } from "astro-icon/components";
 import { buttonVariants } from "@/components/ui/button";
+import { 
+  Inbox, 
+  Mail, 
+  Newspaper, 
+  ShieldAlert, 
+  Settings, 
+  LogOut
+} from "lucide-react";
 
 const currentPath = Astro.url.pathname;
 const navItems = [
-  { href: "/", label: "Dashboard", defaultIcon: "inbox", activeIcon: "inbox-filled" },
-  { href: "/mails", label: "Mails", defaultIcon: "mail", activeIcon: "mail-filled" },
-  { href: "/newsletters", label: "Newsletters", defaultIcon: "news", activeIcon: "news-filled" },
-  { href: "/junk", label: "Junk", defaultIcon: "chat_warning", activeIcon: "chat_warning-filled" },
-  { href: "/settings", label: "Settings", defaultIcon: "settings", activeIcon: "settings-filled" },
+  { href: "/", label: "Dashboard", Icon: Inbox },
+  { href: "/mails", label: "Mails", Icon: Mail },
+  { href: "/newsletters", label: "Newsletters", Icon: Newspaper },
+  { href: "/junk", label: "Junk", Icon: ShieldAlert },
+  { href: "/settings", label: "Settings", Icon: Settings },
 ];
 ---
 
 <header class="flex h-screen w-40 flex-col border-r-2 border-border bg-background font-sans">
-  <div class="border-b-2 border-border p-3 text-center">
-    <Icon name="logo" class="mx-auto text-5xl text-primary" />
+  <div class="border-b-2 border-border p-4 text-center flex justify-center items-center h-[88px]">
+    <Icon name="logo" class="mx-auto text-[3.5rem] text-primary" />
   </div>
   
-  {navItems.map(item => {
-    const isActive = currentPath === item.href;
-    return (
-      <a 
-        href={item.href} 
-        class={`group flex items-center p-3 text-base text-foreground no-underline hover:bg-muted ${isActive ? 'border-l-2 border-primary' : 'border-l-2 border-transparent'}`}
-      >
-        <span class={`mr-2 text-2xl ${isActive ? 'text-primary' : 'text-foreground group-hover:text-primary'}`}>
-          <Icon name={isActive ? item.activeIcon : item.defaultIcon} />
-        </span>
-        {item.label}
-      </a>
-    )
-  })}
+  <nav class="flex-1 overflow-y-auto py-4">
+    {navItems.map(item => {
+      const isActive = currentPath === item.href || currentPath.startsWith(item.href) && item.href !== '/';
+      const IconCmp = item.Icon;
+      return (
+        <a 
+          href={item.href} 
+          class={`group flex items-center p-3 text-sm font-medium text-foreground no-underline hover:bg-muted ${isActive ? 'border-l-2 border-primary bg-muted/50' : 'border-l-2 border-transparent'}`}
+        >
+          <span class={`mr-3 flex items-center justify-center ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-primary'}`}>
+            <IconCmp className="h-5 w-5" />
+          </span>
+          {item.label}
+        </a>
+      )
+    })}
+  </nav>
 
   <a 
     href="/logout"
-    class={`${buttonVariants({ variant: "default" })} mt-auto mx-2 mb-2 flex h-10 items-center justify-center text-base`}
+    class={`${buttonVariants({ variant: "outline" })} mb-4 mx-3 flex h-10 items-center justify-center text-sm`}
   >
-    <Icon name="logout-filled" class="mr-2 text-2xl" /> Logout
+    <LogOut className="mr-2 h-4 w-4" /> Logout
   </a>
 
-  <div class="p-2 text-center text-xs">
+  <div class="p-2 text-center text-xs border-t border-border">
     <a href="https://logo.dev" title="Logo API" class="text-muted-foreground no-underline hover:underline">
       Logos provided by Logo.dev
     </a>
