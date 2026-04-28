@@ -5,9 +5,9 @@ const EmailListItem = ({ element }) => {
   return (
     <div className="email-list-item" style={{ width: "100%" }}>
       <img
-        src={`https://logo.clearbit.com/${
+        src={`https://img.logo.dev/${
           element.envelope.from[0].address.split("@")[1]
-        }`}
+        }?token=pk_c9vsTZFXTmm9jB_Ace1d2w`}
       />
       {/* <input type="checkbox"></input> */}
       <p className="address">
