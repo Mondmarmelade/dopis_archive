@@ -6,9 +6,15 @@ import icon from "astro-icon";
 
 import netlify from "@astrojs/netlify";
 
+import tailwindcss from "@tailwindcss/vite";
+
 // https://astro.build/config
 export default defineConfig({
   output: "server",
   integrations: [react(), icon()],
   adapter: netlify(),
+
+  vite: {
+    plugins: [tailwindcss()],
+  },
 });

@@ -1,73 +1,47 @@
 ---
-import "../styles/Navigation.css";
 import { Icon } from "astro-icon/components";
+import { buttonVariants } from "@/components/ui/button";
+
 const currentPath = Astro.url.pathname;
+const navItems = [
+  { href: "/", label: "Dashboard", defaultIcon: "inbox", activeIcon: "inbox-filled" },
+  { href: "/mails", label: "Mails", defaultIcon: "mail", activeIcon: "mail-filled" },
+  { href: "/newsletters", label: "Newsletters", defaultIcon: "news", activeIcon: "news-filled" },
+  { href: "/junk", label: "Junk", defaultIcon: "chat_warning", activeIcon: "chat_warning-filled" },
+  { href: "/settings", label: "Settings", defaultIcon: "settings", activeIcon: "settings-filled" },
+];
 ---
 
-<header>
-  <div class="logo">
-    <Icon name="logo" />
+<header class="flex h-screen w-40 flex-col border-r-2 border-border bg-background font-sans">
+  <div class="border-b-2 border-border p-3 text-center">
+    <Icon name="logo" class="mx-auto text-5xl text-primary" />
   </div>
-  <a href="/" class:list={[{ current: currentPath === "/" }]}>
-    {currentPath === "/" ? <Icon name="inbox-filled" /> : <Icon name="inbox" />}
-    Dashboard</a
-  >
-  <a href="/mails" class:list={[{ current: currentPath === "/mails" }]}>
-    {
-      currentPath === "/mails" ? (
-        <Icon name="mail-filled" />
-      ) : (
-        <Icon name="mail" />
-      )
-    }
-    Mails</a
-  >
-  <a
-    href="/newsletters"
-    class:list={[{ current: currentPath === "/newsletters" }]}
-  >
-    {
-      currentPath === "/newsletters" ? (
-        <Icon name="news-filled" />
-      ) : (
-        <Icon name="news" />
-      )
-    }
-    Newsletters</a
-  >
-  <a href="/junk" class:list={[{ current: currentPath === "/junk" }]}>
-    {
-      currentPath === "/chat_warning" ? (
-        <Icon name="chat_warning-filled" />
-      ) : (
-        <Icon name="chat_warning" />
-      )
-    }
-    Junk</a
-  >
-  <a href="/settings" class:list={[{ current: currentPath === "/settings" }]}>
-    {
-      currentPath === "/settings" ? (
-        <Icon name="settings-filled" />
-      ) : (
-        <Icon name="settings" />
-      )
-    }
-    Settings</a
-  >
+  
+  {navItems.map(item => {
+    const isActive = currentPath === item.href;
+    return (
+      <a 
+        href={item.href} 
+        class={`group flex items-center p-3 text-base text-foreground no-underline hover:bg-muted ${isActive ? 'border-l-2 border-primary' : 'border-l-2 border-transparent'}`}
+      >
+        <span class={`mr-2 text-2xl ${isActive ? 'text-primary' : 'text-foreground group-hover:text-primary'}`}>
+          <Icon name={isActive ? item.activeIcon : item.defaultIcon} />
+        </span>
+        {item.label}
+      </a>
+    )
+  })}
 
-  <button class="logoutBtn" onclick="location.href = '/logout'">
-    <Icon name="logout-filled" /> Logout
-  </button>
-  <div
-    class="attribution"
-    style="margin-top: auto; padding: 10px; font-size: 0.8rem; text-align: center;"
+  <a 
+    href="/logout"
+    class={`${buttonVariants({ variant: "default" })} mt-auto mx-2 mb-2 flex h-10 items-center justify-center text-base`}
   >
-    <a
-      href="https://logo.dev"
-      title="Logo API"
-      style="color: inherit; text-decoration: none;"
-      >Logos provided by Logo.dev</a
-    >
+    <Icon name="logout-filled" class="mr-2 text-2xl" /> Logout
+  </a>
+
+  <div class="p-2 text-center text-xs">
+    <a href="https://logo.dev" title="Logo API" class="text-muted-foreground no-underline hover:underline">
+      Logos provided by Logo.dev
+    </a>
   </div>
 </header>

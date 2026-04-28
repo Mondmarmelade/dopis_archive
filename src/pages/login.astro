@@ -2,6 +2,10 @@
 import UnauthLayout from "../layouts/UnauthLayout.astro";
 import { Icon } from "astro-icon/components";
 import { createCookie } from "../scripts/createCookie";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 if (Astro.request.method === "POST") {
   // console.log("POST LOGIN");
@@ -25,99 +29,33 @@ if (Astro.request.method === "POST") {
 ---
 
 <UnauthLayout title="Dashboard">
-  <main>
-    <Icon class="logo" name="logo" />
-    <p class="headline">Enter IMAP Credentials:</p>
-    <form id="imap-form" method="POST" action="/login">
-      <div>
-        <label for="user">Username:</label>
-        <input type="email" id="user" name="user" required />
-      </div>
-      <div>
-        <label for="pass">Password:</label>
-        <input type="password" id="pass" name="pass" required />
-      </div>
-      <div>
-        <label for="host">Host:</label>
-        <input
-          type="text"
-          id="host"
-          name="host"
-          value="imap.ionos.de"
-          required
-        />
-      </div>
-      <div>
-        <label for="port">Port:</label>
-        <input type="number" id="port" name="port" value="993" required />
-      </div>
-      <button type="submit">Submit</button>
-    </form>
+  <main class="flex h-[80vh] w-screen flex-col items-center justify-center p-4">
+    <Icon class="mb-4 text-[4.5rem] text-primary" name="logo" />
+    <Card class="w-[80%] md:w-[60%] xl:w-[20%]">
+      <CardHeader>
+        <CardTitle class="text-center text-2xl font-semibold text-primary">Enter IMAP Credentials</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form id="imap-form" method="POST" action="/login" class="space-y-4">
+          <div class="space-y-2">
+            <Label htmlFor="user">Username</Label>
+            <Input type="email" id="user" name="user" required />
+          </div>
+          <div class="space-y-2">
+            <Label htmlFor="pass">Password</Label>
+            <Input type="password" id="pass" name="pass" required />
+          </div>
+          <div class="space-y-2">
+            <Label htmlFor="host">Host</Label>
+            <Input type="text" id="host" name="host" value="imap.ionos.de" required />
+          </div>
+          <div class="space-y-2">
+            <Label htmlFor="port">Port</Label>
+            <Input type="number" id="port" name="port" value="993" required />
+          </div>
+          <Button type="submit" class="w-full mt-4 h-12 text-base">Submit</Button>
+        </form>
+      </CardContent>
+    </Card>
   </main>
 </UnauthLayout>
-
-<style>
-  main {
-    width: 100vw;
-    height: 80vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-direction: column;
-  }
-
-  .logo {
-    font-size: 4.5rem;
-  }
-
-  .headline {
-    margin: 0 0 15px 0;
-    font-size: 1.8rem;
-    font-weight: 600;
-    color: #3661a4;
-  }
-
-  form {
-    width: 80%;
-
-    @media (min-width: 800px) {
-      width: 60%;
-    }
-
-    @media (min-width: 1200px) {
-      width: 20%;
-    }
-
-    div {
-      display: flex;
-      flex-direction: column;
-      margin-top: 5px;
-    }
-
-    input {
-      border-width: 1;
-      border-style: solid;
-      background-color: #ededed;
-      outline: none;
-      border-radius: 5px;
-      padding: 10px;
-      font-size: 1rem;
-    }
-  }
-
-  input:focus {
-    border-color: black;
-  }
-
-  button {
-    width: 100%;
-    height: 50px;
-    background-color: #3661a4;
-    color: white;
-    border: 0;
-    border-radius: 5px;
-    margin-top: 15px;
-    font-size: 1rem;
-    cursor: pointer;
-  }
-</style>

@@ -14,18 +14,13 @@ const EmailList = () => {
       });
   }, []);
 
-  if (loading) return <div>Loading emails...</div>;
+  if (loading)
+    return <div className="p-4 text-sm text-zinc-500">Loading emails...</div>;
 
   return (
-    <div
-      style={{
-        overflowY: "scroll",
-        height: "100vh",
-        overflowX: "clip",
-      }}
-    >
+    <div className="h-full w-full overflow-y-auto overflow-x-hidden flex flex-col">
       {emails.map((element) => {
-        return <EmailListItem element={element} />;
+        return <EmailListItem key={element.seq} element={element} />;
       })}
     </div>
   );
