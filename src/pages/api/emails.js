@@ -1,7 +1,13 @@
 import { ImapFlow } from "imapflow";
 import { decryptData } from "../../utils/cryptography";
+import { resolveFolder } from "../../utils/imapFolders";
 
 export async function GET({ cookies, params, request }) {
+  const url = new URL(request.url);
+  const folderAlias = url.searchParams.get("folder") || "inbox";
+  const page = parseInt(url.searchParams.get("page") || "1", 10);
+  const limit = parseInt(url.searchParams.get("limit") || "20", 10);
+  
   const credentials = decryptData(cookies.get("auth").value); //get login data from cookie -> decrypts them
 
   const client = new ImapFlow({
@@ -35,12 +41,41 @@ export async function GET({ cookies, params, request }) {
       );
     }
 
-    let lock = await client.getMailboxLock("INBOX");
+    const imapFolder = await resolveFolder(client, folderAlias);
+    let lock = await client.getMailboxLock(imapFolder);
 
     try {
       let msgs = [];
+      const totalMessages = client.mailbox.exists;
 
-      for await (let msg of client.fetch("1:*", {
+      if (totalMessages === 0) {
+        return new Response(
+          JSON.stringify({
+            msgs: [],
+            total: 0,
+            hasMore: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      let start = totalMessages - (page * limit) + 1;
+      let end = totalMessages - ((page - 1) * limit);
+
+      if (end <= 0) {
+        return new Response(
+          JSON.stringify({
+            msgs: [],
+            total: totalMessages,
+            hasMore: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (start < 1) start = 1;
+
+      for await (let msg of client.fetch(`${start}:${end}`, {
         uid: true,
         envelope: true,
       })) {
@@ -50,6 +85,8 @@ export async function GET({ cookies, params, request }) {
       return new Response(
         JSON.stringify({
           msgs: msgs.reverse(), // reverses order of emails -> so newest mail is first in array
+          total: totalMessages,
+          hasMore: start > 1,
         }),
         {
           status: 200,

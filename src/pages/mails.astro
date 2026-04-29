@@ -4,7 +4,7 @@ import MailSplitView from "../components/MailSplitView";
 ---
 
 <MainLayout title="Mails">
-  <main class="w-screen h-screen flex text-black text-base overflow-hidden">
-    <MailSplitView client:load />
+  <main class="w-full h-screen flex flex-col text-black text-base overflow-hidden">
+    <MailSplitView folder="inbox" client:load />
   </main>
 </MainLayout>

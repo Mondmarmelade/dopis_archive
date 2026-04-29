@@ -1,0 +1,10 @@
+---
+import MainLayout from "../layouts/MainLayout.astro";
+import MailSplitView from "../components/MailSplitView";
+---
+
+<MainLayout title="Junk">
+  <main class="w-full h-screen flex flex-col text-black text-base overflow-hidden">
+    <MailSplitView folder="junk" client:load />
+  </main>
+</MainLayout>

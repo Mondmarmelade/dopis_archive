@@ -1,13 +1,14 @@
 ---
 import { Icon } from "astro-icon/components";
 import { buttonVariants } from "@/components/ui/button";
-import { 
-  Inbox, 
-  Mail, 
-  Newspaper, 
-  ShieldAlert, 
-  Settings, 
-  LogOut
+import {
+  Inbox,
+  Mail,
+  Newspaper,
+  ShieldAlert,
+  Trash2,
+  Settings,
+  LogOut,
 } from "lucide-react";
 
 const currentPath = Astro.url.pathname;
@@ -16,34 +17,45 @@ const navItems = [
   { href: "/mails", label: "Mails", Icon: Mail },
   { href: "/newsletters", label: "Newsletters", Icon: Newspaper },
   { href: "/junk", label: "Junk", Icon: ShieldAlert },
+  { href: "/trash", label: "Trash", Icon: Trash2 },
   { href: "/settings", label: "Settings", Icon: Settings },
 ];
 ---
 
-<header class="flex h-screen w-40 flex-col border-r-2 border-border bg-background font-sans">
-  <div class="border-b-2 border-border p-4 text-center flex justify-center items-center h-[88px]">
+<header
+  class="flex h-screen w-40 flex-col border-r-2 border-border bg-background font-sans"
+>
+  <div
+    class="border-b-2 border-border p-4 text-center flex justify-center items-center h-[88px]"
+  >
     <Icon name="logo" class="mx-auto text-[3.5rem] text-primary" />
   </div>
-  
+
   <nav class="flex-1 overflow-y-auto py-4">
-    {navItems.map(item => {
-      const isActive = currentPath === item.href || currentPath.startsWith(item.href) && item.href !== '/';
-      const IconCmp = item.Icon;
-      return (
-        <a 
-          href={item.href} 
-          class={`group flex items-center p-3 text-sm font-medium text-foreground no-underline hover:bg-muted ${isActive ? 'border-l-2 border-primary bg-muted/50' : 'border-l-2 border-transparent'}`}
-        >
-          <span class={`mr-3 flex items-center justify-center ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-primary'}`}>
-            <IconCmp className="h-5 w-5" />
-          </span>
-          {item.label}
-        </a>
-      )
-    })}
+    {
+      navItems.map((item) => {
+        const isActive =
+          currentPath === item.href ||
+          (currentPath.startsWith(item.href) && item.href !== "/");
+        const IconCmp = item.Icon;
+        return (
+          <a
+            href={item.href}
+            class={`group flex items-center p-3 text-sm font-medium text-foreground no-underline hover:bg-muted ${isActive ? "border-l-2 border-primary bg-muted/50" : "border-l-2 border-transparent"}`}
+          >
+            <span
+              class={`mr-3 flex items-center justify-center ${isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary"}`}
+            >
+              <IconCmp className="h-5 w-5" />
+            </span>
+            {item.label}
+          </a>
+        );
+      })
+    }
   </nav>
 
-  <a 
+  <a
     href="/logout"
     class={`${buttonVariants({ variant: "outline" })} mb-4 mx-3 flex h-10 items-center justify-center text-sm`}
   >
@@ -51,7 +63,11 @@ const navItems = [
   </a>
 
   <div class="p-2 text-center text-xs border-t border-border">
-    <a href="https://logo.dev" title="Logo API" class="text-muted-foreground no-underline hover:underline">
+    <a
+      href="https://logo.dev"
+      title="Logo API"
+      class="text-muted-foreground no-underline hover:underline"
+    >
       Logos provided by Logo.dev
     </a>
   </div>

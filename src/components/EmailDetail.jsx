@@ -4,7 +4,7 @@ import { selectedEmailSeq } from "../stores/mailStore";
 import PostalMime from "postal-mime";
 import DOMPurify from "dompurify";
 
-const EmailDetail = () => {
+const EmailDetail = ({ folder = "inbox" }) => {
   const seq = useStore(selectedEmailSeq);
   const [emailData, setEmailData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -16,7 +16,7 @@ const EmailDetail = () => {
     setLoading(true);
     setError(null);
 
-    fetch(`/api/email?seq=${seq}`)
+    fetch(`/api/email?seq=${seq}&folder=${folder}`)
       .then((response) => {
         if (!response.ok) throw new Error("Failed to fetch email");
         return response.json();
@@ -33,10 +33,17 @@ const EmailDetail = () => {
         setError(err.message);
         setLoading(false);
       });
-  }, [seq]);
+  }, [seq, folder]);
 
   if (!seq) {
-    return null;
+    return (
+      <div className="flex h-full w-full items-center justify-center p-8 bg-zinc-50/30">
+        <div className="flex flex-col items-center justify-center text-center gap-2">
+          <h3 className="text-lg font-medium text-zinc-600">No message selected</h3>
+          <p className="text-sm text-zinc-400">Select an email from the list to read it</p>
+        </div>
+      </div>
+    );
   }
 
   if (loading) {

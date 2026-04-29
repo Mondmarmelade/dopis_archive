@@ -1,11 +1,13 @@
 import { ImapFlow } from "imapflow";
 import { decryptData } from "../../utils/cryptography";
+import { resolveFolder } from "../../utils/imapFolders";
 
 export async function GET({ cookies, params, request }) {
   const credentials = decryptData(cookies.get("auth").value); //get login data from cookie -> decrypts them
 
   const url = new URL(request.url);
   const emailSeq = url.searchParams.get("seq"); // Extract the 'uid' query parameter
+  const folderAlias = url.searchParams.get("folder") || "inbox";
 
   if (emailSeq === "" || emailSeq === null) {
     return new Response(
@@ -52,7 +54,8 @@ export async function GET({ cookies, params, request }) {
       );
     }
 
-    let lock = await client.getMailboxLock("INBOX");
+    const imapFolder = await resolveFolder(client, folderAlias);
+    let lock = await client.getMailboxLock(imapFolder);
 
     try {
       let lastMsg = await client.fetchOne(`${emailSeq}`, {
