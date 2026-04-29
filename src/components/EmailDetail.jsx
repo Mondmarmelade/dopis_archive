@@ -39,22 +39,28 @@ const EmailDetail = ({ folder = "inbox" }) => {
     return (
       <div className="flex h-full w-full items-center justify-center p-8 bg-zinc-50/30">
         <div className="flex flex-col items-center justify-center text-center gap-2">
-          <h3 className="text-lg font-medium text-zinc-600">No message selected</h3>
-          <p className="text-sm text-zinc-400">Select an email from the list to read it</p>
+          <h3 className="text-lg font-medium text-zinc-600">
+            No message selected
+          </h3>
+          <p className="text-sm text-zinc-400">
+            Select an email from the list to read it
+          </p>
         </div>
       </div>
     );
   }
 
   if (loading) {
-    return <div className="p-8 text-muted-foreground animate-pulse">Loading email...</div>;
+    return (
+      <div className="p-8 text-muted-foreground animate-pulse">
+        Loading email...
+      </div>
+    );
   }
 
   if (error) {
     return (
-      <div className="p-8 text-destructive">
-        Error loading email: {error}
-      </div>
+      <div className="p-8 text-destructive">Error loading email: {error}</div>
     );
   }
 

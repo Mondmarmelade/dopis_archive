@@ -19,7 +19,7 @@ export async function GET({ cookies, params, request }) {
         headers: {
           "Content-Type": "application/json",
         },
-      }
+      },
     );
   }
 
@@ -50,7 +50,7 @@ export async function GET({ cookies, params, request }) {
           headers: {
             "Content-Type": "application/json",
           },
-        }
+        },
       );
     }
 
@@ -79,7 +79,7 @@ export async function GET({ cookies, params, request }) {
           headers: {
             "Content-Type": "application/json",
           },
-        }
+        },
       );
     } finally {
       lock.release();

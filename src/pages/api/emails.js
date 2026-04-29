@@ -7,7 +7,7 @@ export async function GET({ cookies, params, request }) {
   const folderAlias = url.searchParams.get("folder") || "inbox";
   const page = parseInt(url.searchParams.get("page") || "1", 10);
   const limit = parseInt(url.searchParams.get("limit") || "20", 10);
-  
+
   const credentials = decryptData(cookies.get("auth").value); //get login data from cookie -> decrypts them
 
   const client = new ImapFlow({
@@ -37,7 +37,7 @@ export async function GET({ cookies, params, request }) {
           headers: {
             "Content-Type": "application/json",
           },
-        }
+        },
       );
     }
 
@@ -55,12 +55,12 @@ export async function GET({ cookies, params, request }) {
             total: 0,
             hasMore: false,
           }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
+          { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
 
-      let start = totalMessages - (page * limit) + 1;
-      let end = totalMessages - ((page - 1) * limit);
+      let start = totalMessages - page * limit + 1;
+      let end = totalMessages - (page - 1) * limit;
 
       if (end <= 0) {
         return new Response(
@@ -69,7 +69,7 @@ export async function GET({ cookies, params, request }) {
             total: totalMessages,
             hasMore: false,
           }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
+          { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
 
@@ -93,7 +93,7 @@ export async function GET({ cookies, params, request }) {
           headers: {
             "Content-Type": "application/json",
           },
-        }
+        },
       );
     } finally {
       lock.release();

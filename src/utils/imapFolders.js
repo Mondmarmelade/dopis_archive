@@ -1,6 +1,6 @@
 export async function resolveFolder(client, folderAlias) {
   if (!folderAlias) return "INBOX";
-  
+
   const targetRole = folderAlias.toLowerCase();
   // Always return standard INBOX for inbox alias
   if (targetRole === "inbox") return "INBOX";
@@ -10,10 +10,10 @@ export async function resolveFolder(client, folderAlias) {
     const mailboxes = await client.list();
     let selectedPath = null;
     let fallbackPath = null;
-    
+
     for (const mailbox of mailboxes) {
       if (!mailbox) continue;
-      
+
       const specialUse = mailbox.specialUse || "";
       const path = mailbox.path || "";
       const name = mailbox.name || "";
@@ -27,12 +27,18 @@ export async function resolveFolder(client, folderAlias) {
         selectedPath = path;
         break;
       }
-      
+
       // Secondary check: string matching on folder paths if SPECIAL-USE not found
-      if (targetRole === "junk" && (/junk|spam/i.test(path) || /junk|spam/i.test(name))) {
+      if (
+        targetRole === "junk" &&
+        (/junk|spam/i.test(path) || /junk|spam/i.test(name))
+      ) {
         fallbackPath = path;
       }
-      if (targetRole === "trash" && (/trash|deleted|bin/i.test(path) || /trash|deleted|bin/i.test(name))) {
+      if (
+        targetRole === "trash" &&
+        (/trash|deleted|bin/i.test(path) || /trash|deleted|bin/i.test(name))
+      ) {
         fallbackPath = path;
       }
     }
