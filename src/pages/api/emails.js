@@ -3,12 +3,27 @@ import { decryptData } from "../../utils/cryptography";
 import { resolveFolder } from "../../utils/imapFolders";
 
 export async function GET({ cookies, params, request }) {
+  const authCookie = cookies.get("auth");
+  if (!authCookie) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const credentials = decryptData(authCookie.value); //get login data from cookie -> decrypts them
+  if (!credentials) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const url = new URL(request.url);
+
   const folderAlias = url.searchParams.get("folder") || "inbox";
   const page = parseInt(url.searchParams.get("page") || "1", 10);
   const limit = parseInt(url.searchParams.get("limit") || "20", 10);
-
-  const credentials = decryptData(cookies.get("auth").value); //get login data from cookie -> decrypts them
 
   const client = new ImapFlow({
     host: credentials[2].host,
@@ -79,7 +94,12 @@ export async function GET({ cookies, params, request }) {
         uid: true,
         envelope: true,
       })) {
-        msgs.push(msg);
+        msgs.push({
+          uid: msg.uid,
+          seq: msg.seq,
+          envelope: msg.envelope,
+          flags: msg.flags ? Array.from(msg.flags) : [],
+        });
       }
 
       return new Response(

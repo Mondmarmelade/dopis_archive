@@ -1,10 +1,10 @@
 import React from "react";
 import { useStore } from "@nanostores/react";
-import { selectedEmailSeq } from "../stores/mailStore";
+import { selectedEmailUid } from "../stores/mailStore";
 
 const EmailListItem = ({ element }) => {
-  const selectedSeq = useStore(selectedEmailSeq);
-  const isSelected = selectedSeq === element.seq;
+  const selectedUid = useStore(selectedEmailUid);
+  const isSelected = selectedUid === element.uid;
 
   const from = element.envelope.from[0];
   const senderName = from.name !== "" ? from.name : from.address;
@@ -12,7 +12,7 @@ const EmailListItem = ({ element }) => {
 
   return (
     <div
-      onClick={() => selectedEmailSeq.set(element.seq)}
+      onClick={() => selectedEmailUid.set(element.uid)}
       className={`shrink-0 flex items-center gap-3 px-4 py-3 border-b border-zinc-100 cursor-pointer overflow-hidden transition-colors ${
         isSelected ? "bg-zinc-100" : "hover:bg-zinc-50 bg-white"
       }`}

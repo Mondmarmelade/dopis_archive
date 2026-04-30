@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useStore } from "@nanostores/react";
+import { emailsList } from "../stores/mailStore";
 import EmailListItem from "./EmailListItem";
 
 const EmailList = ({ folder = "inbox" }) => {
-  const [emails, setEmails] = useState([]);
+  const emails = useStore(emailsList);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -14,7 +16,7 @@ const EmailList = ({ folder = "inbox" }) => {
     fetch(`/api/emails?folder=${folder}&page=1`)
       .then((response) => response.json())
       .then((data) => {
-        setEmails(data.msgs || []);
+        emailsList.set(data.msgs || []);
         setHasMore(data.hasMore);
         setLoading(false);
       });
@@ -27,7 +29,7 @@ const EmailList = ({ folder = "inbox" }) => {
     fetch(`/api/emails?folder=${folder}&page=${nextPage}`)
       .then((response) => response.json())
       .then((data) => {
-        setEmails((prev) => [...prev, ...(data.msgs || [])]);
+        emailsList.set([...emailsList.get(), ...(data.msgs || [])]);
         setHasMore(data.hasMore);
         setPage(nextPage);
         setLoadingMore(false);

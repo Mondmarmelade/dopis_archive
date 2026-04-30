@@ -7,12 +7,12 @@ import {
 import EmailList from "./EmailList";
 import EmailDetail from "./EmailDetail";
 import { useEffect } from "react";
-import { selectedEmailSeq } from "../stores/mailStore";
+import { selectedEmailUid } from "../stores/mailStore";
 
 export default function MailSplitView({ folder = "inbox" }) {
   useEffect(() => {
     // Reset selected email when switching folders
-    selectedEmailSeq.set(null);
+    selectedEmailUid.set(null);
   }, [folder]);
 
   return (

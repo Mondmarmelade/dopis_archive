@@ -1,4 +1,5 @@
 import { atom } from "nanostores";
 
-export const selectedEmailSeq = atom(null);
+export const selectedEmailUid = atom(null);
 export const currentFolder = atom("inbox");
+export const emailsList = atom([]);
