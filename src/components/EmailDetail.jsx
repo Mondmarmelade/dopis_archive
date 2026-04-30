@@ -68,31 +68,34 @@ const EmailDetail = ({ folder = "inbox" }) => {
     return null;
   }
 
-  // Use HTML if available, fallback to text
+  const rawHtml = typeof (emailData.html || emailData.text) === "string" 
+    ? (emailData.html || emailData.text) 
+    : String(emailData.html || emailData.text || "");
+
   const contentHtml = emailData.html
-    ? DOMPurify.sanitize(emailData.html)
-    : DOMPurify.sanitize(emailData.text).replace(/\n/g, "<br>");
+    ? DOMPurify.sanitize(rawHtml)
+    : DOMPurify.sanitize(rawHtml).replace(/\n/g, "<br>");
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-8 text-foreground">
       <div className="mb-4 border-b border-border pb-4">
-        <h1 className="mb-4 text-2xl font-bold">{emailData.subject}</h1>
+        <h1 className="mb-4 text-2xl font-bold">{String(emailData.subject || "No Subject")}</h1>
         <div className="text-sm text-muted-foreground">
           <strong className="font-semibold text-foreground">From:</strong>{" "}
           {emailData.from?.name
-            ? `${emailData.from.name} <${emailData.from.address}>`
-            : emailData.from?.address}
+            ? `${emailData.from.name} <${emailData.from.address || ''}>`
+            : emailData.from?.address || String(emailData.from || 'Unknown')}
         </div>
         <div className="mt-2 text-sm text-muted-foreground">
           <strong className="font-semibold text-foreground">To:</strong>{" "}
-          {emailData.to
-            ?.map((t) => (t.name ? `${t.name} <${t.address}>` : t.address))
-            .join(", ")}
+          {Array.isArray(emailData.to)
+            ? emailData.to.map((t) => (t?.name ? `${t.name} <${t.address || ''}>` : t?.address)).join(", ")
+            : emailData.to?.address || String(emailData.to || 'Unknown')}
         </div>
       </div>
 
       <div
-        className="email-body prose prose-slate dark:prose-invert max-w-none flex-1"
+        className="email-body flex-1 overflow-x-auto [&_table]:max-w-full"
         dangerouslySetInnerHTML={{ __html: contentHtml }}
       />
     </div>

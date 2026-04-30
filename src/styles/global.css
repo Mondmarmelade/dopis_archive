@@ -98,3 +98,24 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  /* Basic reseting for unstyled HTML emails */
+  .email-body a:not([style]) {
+    @apply text-blue-600 underline;
+  }
+  .email-body p:not([style]) {
+    @apply mb-4;
+  }
+  .email-body ul:not([style]) {
+    @apply list-disc pl-5 mb-4;
+  }
+  .email-body ol:not([style]) {
+    @apply list-decimal pl-5 mb-4;
+  }
+  .email-body h1:not([style]), 
+  .email-body h2:not([style]), 
+  .email-body h3:not([style]) {
+    @apply font-bold mb-4 mt-6;
+  }
+}
