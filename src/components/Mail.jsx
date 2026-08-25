@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Inbox,
   Send,
@@ -46,13 +46,16 @@ export function Mail({
   const [currentView, setCurrentView] = useState(defaultView); // "mails" | "settings"
   const [mails, setMails] = useState([]);
   const [accountEmail, setAccountEmail] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedMailId, setSelectedMailId] = useState(null);
+
+  // In-Memory Stale-While-Revalidate Folder Cache
+  const folderCacheRef = useRef({});
 
   // AI State
   const [aiMap, setAiMap] = useState({});
@@ -61,7 +64,7 @@ export function Mail({
   const isAnalyzingQueue = useRef(false);
 
   // Analyze a specific email with the AI API
-  const analyzeEmail = async (mailItem, fullText = "", fullHtml = "", force = false) => {
+  const analyzeEmail = useCallback(async (mailItem, fullText = "", fullHtml = "", force = false) => {
     if (!mailItem) return null;
     const id = mailItem.id || mailItem.seq;
 
@@ -99,38 +102,57 @@ export function Mail({
       console.warn(`AI analysis failed for email ${id}:`, err.message);
       throw err;
     }
-  };
+  }, []);
 
-  // Background queue: analyze unanalyzed emails in current mailbox
-  const processUnanalyzedQueue = async (items) => {
+  // Idle Background Queue for unanalyzed emails (never blocks UI)
+  const processUnanalyzedQueue = useCallback((items) => {
     if (isAnalyzingQueue.current || !items || items.length === 0) return;
-    isAnalyzingQueue.current = true;
 
-    try {
-      const unanalyzed = items.filter((m) => {
-        const id = m.id || m.seq;
-        return !getCachedAnalysis(id) && !aiMap[id];
-      }).slice(0, 10);
+    const runQueue = async () => {
+      isAnalyzingQueue.current = true;
+      try {
+        const unanalyzed = items.filter((m) => {
+          const id = m.id || m.seq;
+          return !getCachedAnalysis(id) && !aiMap[id];
+        }).slice(0, 8);
 
-      for (const item of unanalyzed) {
-        try {
-          await analyzeEmail(item, "", "", false);
-        } catch {
-          // continue with next
+        for (const item of unanalyzed) {
+          try {
+            await analyzeEmail(item, "", "", false);
+          } catch {
+            // continue
+          }
         }
+      } finally {
+        isAnalyzingQueue.current = false;
       }
-    } finally {
-      isAnalyzingQueue.current = false;
-    }
-  };
+    };
 
-  const fetchEmails = async (isManualRefresh = false, folderToLoad = selectedFolder) => {
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      window.requestIdleCallback(() => runQueue(), { timeout: 3000 });
+    } else {
+      setTimeout(runQueue, 500);
+    }
+  }, [aiMap, analyzeEmail]);
+
+  // Fetch emails with Stale-While-Revalidate caching pattern
+  const fetchEmails = useCallback(async (isManualRefresh = false, folderToLoad = selectedFolder) => {
+    const isCached = Boolean(folderCacheRef.current[folderToLoad]);
+
     if (isManualRefresh) {
       setRefreshing(true);
-    } else {
+    } else if (!isCached) {
       setLoading(true);
     }
     setError(null);
+
+    // If virtual newsletter folder and inbox is already cached, instant 0ms display
+    if (folderToLoad === "newsletters" && folderCacheRef.current["inbox"]) {
+      setMails(folderCacheRef.current["inbox"]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
 
     try {
       const res = await fetch(`/api/emails?folder=${folderToLoad}`);
@@ -143,6 +165,9 @@ export function Mail({
       }
       const data = await res.json();
       const fetchedMails = data.msgs || [];
+
+      // Update in-memory cache
+      folderCacheRef.current[folderToLoad] = fetchedMails;
       setMails(fetchedMails);
       setAccountEmail(data.account || "");
 
@@ -155,32 +180,52 @@ export function Mail({
           initialAiMap[id] = cached;
         }
       });
-      setAiMap(initialAiMap);
+      setAiMap((prev) => ({ ...prev, ...initialAiMap }));
 
-      // Auto-select first email in newly loaded folder
+      // Auto-select first email in newly loaded folder if none selected
       if (fetchedMails.length > 0) {
-        const first = fetchedMails[0];
-        const firstId = first.id || first.seq;
-        setSelectedMailId(firstId);
+        setSelectedMailId((prev) => {
+          const exists = fetchedMails.some((m) => String(m.id || m.seq) === String(prev));
+          return exists ? prev : (fetchedMails[0].id || fetchedMails[0].seq);
+        });
       } else {
         setSelectedMailId(null);
       }
 
-      // Start background scan for unanalyzed emails
+      // Schedule background scan in idle time
       processUnanalyzedQueue(fetchedMails);
     } catch (err) {
-      setError(err.message || "Failed to load emails");
+      if (!isCached) {
+        setError(err.message || "Failed to load emails");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [selectedFolder, processUnanalyzedQueue]);
+
+  // Instant folder switching with SWR Cache
+  const handleSelectFolder = useCallback((newFolder) => {
+    setCurrentView("mails");
+    if (newFolder !== selectedFolder) {
+      setSelectedFolder(newFolder);
+      setSearchQuery("");
+      setActiveTab("all");
+
+      // Check if folder is already cached in memory for INSTANT 0ms switch
+      if (newFolder === "newsletters" && folderCacheRef.current["inbox"]) {
+        setMails(folderCacheRef.current["inbox"]);
+      } else if (folderCacheRef.current[newFolder]) {
+        setMails(folderCacheRef.current[newFolder]);
+      }
+    }
+  }, [selectedFolder]);
 
   useEffect(() => {
     fetchEmails(false, selectedFolder);
-  }, [selectedFolder]);
+  }, [selectedFolder, fetchEmails]);
 
-  // When selected email changes, check if it needs immediate analysis
+  // Immediate analysis for selected email
   useEffect(() => {
     if (!selectedMailId || currentView !== "mails") return;
 
@@ -208,18 +253,9 @@ export function Mail({
       setAiLoading(false);
       setAiError(null);
     }
-  }, [selectedMailId, currentView]);
+  }, [selectedMailId, currentView, selectedFolder, mails, aiMap, analyzeEmail]);
 
-  const handleSelectFolder = (newFolder) => {
-    setCurrentView("mails");
-    if (newFolder !== selectedFolder) {
-      setSelectedFolder(newFolder);
-      setSearchQuery("");
-      setActiveTab("all");
-    }
-  };
-
-  const markMailAsRead = async (seq, isRead) => {
+  const markMailAsRead = useCallback(async (seq, isRead) => {
     if (!seq) return;
 
     // Optimistic UI update
@@ -239,17 +275,17 @@ export function Mail({
     } catch (err) {
       console.error("Failed to sync read status with IMAP:", err);
     }
-  };
+  }, []);
 
-  const handleSelectMail = (id) => {
+  const handleSelectMail = useCallback((id) => {
     setSelectedMailId(id);
     const target = mails.find((m) => String(m.id || m.seq) === String(id));
     if (target && !target.read) {
       markMailAsRead(id, true);
     }
-  };
+  }, [mails, markMailAsRead]);
 
-  const handleReanalyze = async () => {
+  const handleReanalyze = useCallback(async () => {
     if (!selectedMailId) return;
     const target = mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
     if (!target) return;
@@ -266,29 +302,29 @@ export function Mail({
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [selectedMailId, selectedFolder, mails, analyzeEmail]);
 
-  const handleToggleActionItem = (taskIndex) => {
+  const handleToggleActionItem = useCallback((taskIndex) => {
     if (!selectedMailId) return;
     const updated = toggleCachedActionItem(selectedMailId, taskIndex);
     if (updated) {
       setAiMap((prev) => ({ ...prev, [selectedMailId]: updated }));
     }
-  };
+  }, [selectedMailId]);
 
-  const moveToTrash = async (seq) => {
+  const moveToTrash = useCallback(async (seq) => {
     if (!seq) return;
 
-    // 1. Optimistically remove from current list
     const remaining = mails.filter((m) => String(m.id || m.seq) !== String(seq));
     setMails(remaining);
+    if (folderCacheRef.current[selectedFolder]) {
+      folderCacheRef.current[selectedFolder] = remaining;
+    }
 
-    // 2. Select next email
     if (String(selectedMailId) === String(seq)) {
       setSelectedMailId(remaining.length > 0 ? (remaining[0].id || remaining[0].seq) : null);
     }
 
-    // 3. Send request to IMAP backend
     try {
       const res = await fetch("/api/trash", {
         method: "POST",
@@ -306,55 +342,57 @@ export function Mail({
     } catch (err) {
       console.error("Failed to move email to trash:", err);
     }
-  };
+  }, [mails, selectedFolder, selectedMailId]);
 
-  // Combine mail items with their AI analysis data for rich list rendering
-  const enrichedMails = mails.map((m) => {
-    const id = m.id || m.seq;
-    return {
-      ...m,
-      ai: aiMap[id] || null,
-    };
-  });
+  // Memoized enriched mails list
+  const enrichedMails = useMemo(() => {
+    return mails.map((m) => {
+      const id = m.id || m.seq;
+      return {
+        ...m,
+        ai: aiMap[id] || null,
+      };
+    });
+  }, [mails, aiMap]);
 
-  // Filter mails based on tab and search query
-  const filteredMails = enrichedMails.filter((mail) => {
-    // Tab filter (all vs unread)
-    if (activeTab === "unread" && mail.read) {
-      return false;
-    }
-
-    // Folder newsletter filter (AI detected newsletter, werbung or promotions)
-    if (selectedFolder === "newsletters") {
-      const cat = mail.ai?.category?.toLowerCase();
-      const isNewsletterOrPromo =
-        cat === "newsletter" ||
-        cat === "werbung" ||
-        cat === "angebote" ||
-        mail.subject?.toLowerCase().includes("newsletter");
-      if (!isNewsletterOrPromo) return false;
-    }
-
-    // Search query filter
-    if (searchQuery.trim().length > 0) {
-      const q = searchQuery.toLowerCase();
-      const matchSubject = mail.subject?.toLowerCase().includes(q);
-      const matchName = mail.name?.toLowerCase().includes(q);
-      const matchEmail = mail.email?.toLowerCase().includes(q);
-      const matchCategory = mail.ai?.category?.toLowerCase().includes(q);
-      const matchTags = mail.ai?.tags?.some((t) => t.toLowerCase().includes(q));
-      if (!matchSubject && !matchName && !matchEmail && !matchCategory && !matchTags) {
+  // Memoized filtered mails list
+  const filteredMails = useMemo(() => {
+    return enrichedMails.filter((mail) => {
+      if (activeTab === "unread" && mail.read) {
         return false;
       }
-    }
 
-    return true;
-  });
+      if (selectedFolder === "newsletters") {
+        const cat = mail.ai?.category?.toLowerCase();
+        const isNewsletterOrPromo =
+          cat === "newsletter" ||
+          cat === "werbung" ||
+          cat === "angebote" ||
+          mail.subject?.toLowerCase().includes("newsletter");
+        if (!isNewsletterOrPromo) return false;
+      }
 
-  const unreadCount = mails.filter((m) => !m.read).length;
-  const selectedSummaryMail = mails.find(
-    (m) => String(m.id || m.seq) === String(selectedMailId)
-  );
+      if (searchQuery.trim().length > 0) {
+        const q = searchQuery.toLowerCase();
+        const matchSubject = mail.subject?.toLowerCase().includes(q);
+        const matchName = mail.name?.toLowerCase().includes(q);
+        const matchEmail = mail.email?.toLowerCase().includes(q);
+        const matchCategory = mail.ai?.category?.toLowerCase().includes(q);
+        const matchTags = mail.ai?.tags?.some((t) => t.toLowerCase().includes(q));
+        if (!matchSubject && !matchName && !matchEmail && !matchCategory && !matchTags) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [enrichedMails, activeTab, selectedFolder, searchQuery]);
+
+  const unreadCount = useMemo(() => mails.filter((m) => !m.read).length, [mails]);
+  const selectedSummaryMail = useMemo(() => {
+    return mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
+  }, [mails, selectedMailId]);
+
   const currentAiAnalysis = selectedMailId ? aiMap[selectedMailId] || null : null;
 
   const folderTitle =
@@ -386,8 +424,8 @@ export function Mail({
           onCollapse={() => setIsCollapsed(true)}
           onResize={() => setIsCollapsed(false)}
           className={cn(
-            isCollapsed && "min-w-[50px] transition-all duration-300 ease-in-out",
-            "border-r bg-muted/20"
+            isCollapsed && "min-w-[50px] transition-all duration-200 ease-in-out",
+            "border-r bg-muted/20 select-none"
           )}
         >
           <AccountSwitcher isCollapsed={isCollapsed} accountEmail={accountEmail} />
@@ -471,7 +509,7 @@ export function Mail({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer transition-transform active:scale-95"
                       onClick={() => fetchEmails(true, selectedFolder)}
                       disabled={refreshing || loading}
                       title="Refresh mailbox"
@@ -507,12 +545,12 @@ export function Mail({
 
                 {/* Mail Items Scrollable Area */}
                 <div className="flex-1 overflow-y-auto">
-                  {loading ? (
+                  {loading && mails.length === 0 ? (
                     <div className="flex h-64 flex-col items-center justify-center p-8 text-muted-foreground">
                       <RefreshCw className="h-6 w-6 animate-spin text-primary" />
                       <p className="mt-3 text-xs">Loading {folderTitle.toLowerCase()} from IMAP...</p>
                     </div>
-                  ) : error ? (
+                  ) : error && mails.length === 0 ? (
                     <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-destructive">
                       <p className="text-sm font-medium">Failed to load emails</p>
                       <p className="mt-1 text-xs text-muted-foreground">{error}</p>

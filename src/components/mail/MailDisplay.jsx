@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import DOMPurify from "dompurify";
 import {
   Archive,
@@ -99,10 +99,19 @@ export function MailDisplay({
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const detailCache = useRef({});
 
   useEffect(() => {
     if (!selectedMailId) {
       setDetail(null);
+      setError(null);
+      return;
+    }
+
+    const cacheKey = `${selectedMailId}_${currentFolder}`;
+    if (detailCache.current[cacheKey]) {
+      setDetail(detailCache.current[cacheKey]);
+      setLoading(false);
       setError(null);
       return;
     }
@@ -120,6 +129,7 @@ export function MailDisplay({
       })
       .then((data) => {
         if (isMounted) {
+          detailCache.current[cacheKey] = data;
           setDetail(data);
           setLoading(false);
         }
@@ -165,7 +175,7 @@ export function MailDisplay({
         <div className="flex items-center gap-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <Archive className="h-4 w-4" />
                 <span className="sr-only">Archive</span>
               </Button>
@@ -175,7 +185,7 @@ export function MailDisplay({
 
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <ArchiveX className="h-4 w-4" />
                 <span className="sr-only">Move to junk</span>
               </Button>
@@ -190,7 +200,7 @@ export function MailDisplay({
                 variant="ghost"
                 size="icon"
                 onClick={onMoveToTrash}
-                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
               >
                 <Trash2 className="h-4 w-4" />
                 <span className="sr-only">
@@ -212,7 +222,7 @@ export function MailDisplay({
                 variant="ghost"
                 size="icon"
                 onClick={onToggleRead}
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 {isRead ? (
                   <MailIcon className="h-4 w-4" />
@@ -233,7 +243,7 @@ export function MailDisplay({
         <div className="flex items-center gap-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <Reply className="h-4 w-4" />
                 <span className="sr-only">Reply</span>
               </Button>
@@ -243,7 +253,7 @@ export function MailDisplay({
 
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <ReplyAll className="h-4 w-4" />
                 <span className="sr-only">Reply all</span>
               </Button>
@@ -253,7 +263,7 @@ export function MailDisplay({
 
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <Forward className="h-4 w-4" />
                 <span className="sr-only">Forward</span>
               </Button>
