@@ -1,6 +1,7 @@
 import { ImapFlow } from "imapflow";
 import PostalMime from "postal-mime";
 import { decryptData } from "../../utils/cryptography";
+import { resolveMailboxPath } from "../../utils/imapHelpers";
 
 export async function GET({ cookies, params, request }) {
   const authCookie = cookies.get("auth");
@@ -21,6 +22,7 @@ export async function GET({ cookies, params, request }) {
 
   const url = new URL(request.url);
   const emailSeq = url.searchParams.get("seq");
+  const requestedFolder = url.searchParams.get("folder") || "inbox";
 
   if (!emailSeq) {
     return new Response(
@@ -53,7 +55,8 @@ export async function GET({ cookies, params, request }) {
       );
     }
 
-    const lock = await client.getMailboxLock("INBOX");
+    const targetMailbox = await resolveMailboxPath(client, requestedFolder);
+    const lock = await client.getMailboxLock(targetMailbox);
 
     try {
       const msg = await client.fetchOne(`${emailSeq}`, {

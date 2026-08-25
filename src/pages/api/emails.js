@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { decryptData } from "../../utils/cryptography";
+import { resolveMailboxPath } from "../../utils/imapHelpers";
 
 export async function GET({ cookies, params, request }) {
   const authCookie = cookies.get("auth");
@@ -17,6 +18,9 @@ export async function GET({ cookies, params, request }) {
       { status: 401, headers: { "Content-Type": "application/json" } }
     );
   }
+
+  const url = new URL(request.url);
+  const requestedFolder = url.searchParams.get("folder") || "inbox";
 
   const client = new ImapFlow({
     host: credentials[2].host,
@@ -42,7 +46,8 @@ export async function GET({ cookies, params, request }) {
       );
     }
 
-    const lock = await client.getMailboxLock("INBOX");
+    const targetMailbox = await resolveMailboxPath(client, requestedFolder);
+    const lock = await client.getMailboxLock(targetMailbox);
 
     try {
       const msgs = [];
@@ -75,6 +80,8 @@ export async function GET({ cookies, params, request }) {
       return new Response(
         JSON.stringify({
           account: credentials[0].user,
+          folder: requestedFolder,
+          mailbox: targetMailbox,
           msgs,
         }),
         {

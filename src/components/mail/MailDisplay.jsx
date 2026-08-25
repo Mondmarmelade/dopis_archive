@@ -57,7 +57,14 @@ function getInitials(name, email) {
   return "M";
 }
 
-export function MailDisplay({ selectedMailId, summaryMail, isRead, onToggleRead }) {
+export function MailDisplay({
+  selectedMailId,
+  summaryMail,
+  isRead,
+  onToggleRead,
+  onMoveToTrash,
+  currentFolder = "inbox",
+}) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -73,7 +80,7 @@ export function MailDisplay({ selectedMailId, summaryMail, isRead, onToggleRead 
     setLoading(true);
     setError(null);
 
-    fetch(`/api/email?seq=${selectedMailId}`)
+    fetch(`/api/email?seq=${selectedMailId}&folder=${currentFolder}`)
       .then((res) => {
         if (!res.ok) {
           throw new Error(`Failed to load email (${res.status})`);
@@ -96,7 +103,7 @@ export function MailDisplay({ selectedMailId, summaryMail, isRead, onToggleRead 
     return () => {
       isMounted = false;
     };
-  }, [selectedMailId]);
+  }, [selectedMailId, currentFolder]);
 
   if (!selectedMailId) {
     return (
@@ -106,7 +113,7 @@ export function MailDisplay({ selectedMailId, summaryMail, isRead, onToggleRead 
         </div>
         <h3 className="mt-4 text-sm font-semibold text-foreground">No message selected</h3>
         <p className="mt-1 text-xs text-muted-foreground max-w-xs">
-          Select an email from your inbox on the left to read its full content and view details.
+          Select an email from your mailbox on the left to read its full content and view details.
         </p>
       </div>
     );
@@ -118,6 +125,7 @@ export function MailDisplay({ selectedMailId, summaryMail, isRead, onToggleRead 
   const initials = getInitials(senderName, senderEmail);
   const subject = detail?.subject || summaryMail?.subject || "(No Subject)";
   const dateStr = detail?.date || summaryMail?.date;
+  const isTrashFolder = currentFolder === "trash";
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -144,14 +152,24 @@ export function MailDisplay({ selectedMailId, summaryMail, isRead, onToggleRead 
             <TooltipContent>Move to junk</TooltipContent>
           </Tooltip>
 
+          {/* Move to Trash / Delete */}
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onMoveToTrash}
+                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              >
                 <Trash2 className="h-4 w-4" />
-                <span className="sr-only">Move to trash</span>
+                <span className="sr-only">
+                  {isTrashFolder ? "Delete permanently" : "Move to trash"}
+                </span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Move to trash</TooltipContent>
+            <TooltipContent>
+              {isTrashFolder ? "Delete permanently" : "Move to trash"}
+            </TooltipContent>
           </Tooltip>
 
           <Separator orientation="vertical" className="mx-1 h-6" />

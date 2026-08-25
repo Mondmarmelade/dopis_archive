@@ -9,7 +9,6 @@ import {
   RefreshCw,
   Newspaper,
   Settings,
-  MailCheck,
 } from "lucide-react";
 
 import {
@@ -45,17 +44,67 @@ export function Mail({
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedMailId, setSelectedMailId] = useState(null);
 
+  const fetchEmails = async (isManualRefresh = false, folderToLoad = selectedFolder) => {
+    if (isManualRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/emails?folder=${folderToLoad}`);
+      if (!res.ok) {
+        if (res.status === 401) {
+          window.location.href = "/logout";
+          return;
+        }
+        throw new Error(`Server returned status ${res.status}`);
+      }
+      const data = await res.json();
+      const fetchedMails = data.msgs || [];
+      setMails(fetchedMails);
+      setAccountEmail(data.account || "");
+
+      // Auto-select first email in newly loaded folder
+      if (fetchedMails.length > 0) {
+        const first = fetchedMails[0];
+        const firstId = first.id || first.seq;
+        setSelectedMailId(firstId);
+      } else {
+        setSelectedMailId(null);
+      }
+    } catch (err) {
+      setError(err.message || "Failed to load emails");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmails(false, selectedFolder);
+  }, [selectedFolder]);
+
+  const handleSelectFolder = (newFolder) => {
+    if (newFolder !== selectedFolder) {
+      setSelectedFolder(newFolder);
+      setSearchQuery("");
+      setActiveTab("all");
+    }
+  };
+
   const markMailAsRead = async (seq, isRead) => {
     if (!seq) return;
 
-    // 1. Optimistic UI update: instantly update blue dot and counter
+    // Optimistic UI update
     setMails((prev) =>
       prev.map((m) =>
         String(m.id || m.seq) === String(seq) ? { ...m, read: isRead } : m
       )
     );
 
-    // 2. Persist flag to IMAP server in background
+    // Sync with IMAP
     try {
       await fetch("/api/flags", {
         method: "POST",
@@ -75,50 +124,39 @@ export function Mail({
     }
   };
 
-  const fetchEmails = async (isManualRefresh = false) => {
-    if (isManualRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
+  const moveToTrash = async (seq) => {
+    if (!seq) return;
+
+    // 1. Optimistically remove from current list
+    const remaining = mails.filter((m) => String(m.id || m.seq) !== String(seq));
+    setMails(remaining);
+
+    // 2. Select next email
+    if (String(selectedMailId) === String(seq)) {
+      setSelectedMailId(remaining.length > 0 ? (remaining[0].id || remaining[0].seq) : null);
     }
-    setError(null);
 
+    // 3. Send request to IMAP backend
     try {
-      const res = await fetch("/api/emails");
-      if (!res.ok) {
-        if (res.status === 401) {
-          window.location.href = "/logout";
-          return;
-        }
-        throw new Error(`Server returned status ${res.status}`);
-      }
-      const data = await res.json();
-      const fetchedMails = data.msgs || [];
-      setMails(fetchedMails);
-      setAccountEmail(data.account || "");
+      const res = await fetch("/api/trash", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seq,
+          folder: selectedFolder,
+          permanent: selectedFolder === "trash",
+        }),
+      });
 
-      // Auto-select first email if none selected
-      if (!selectedMailId && fetchedMails.length > 0) {
-        const first = fetchedMails[0];
-        const firstId = first.id || first.seq;
-        setSelectedMailId(firstId);
-        if (!first.read) {
-          markMailAsRead(firstId, true);
-        }
+      if (!res.ok) {
+        console.error("Failed to delete email on IMAP:", await res.text());
       }
     } catch (err) {
-      setError(err.message || "Failed to load emails");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      console.error("Failed to move email to trash:", err);
     }
   };
 
-  useEffect(() => {
-    fetchEmails();
-  }, []);
-
-  // Filter mails based on tab, folder and search query
+  // Filter mails based on tab and search query
   const filteredMails = mails.filter((mail) => {
     // Tab filter (all vs unread)
     if (activeTab === "unread" && mail.read) {
@@ -143,6 +181,19 @@ export function Mail({
   const selectedSummaryMail = mails.find(
     (m) => String(m.id || m.seq) === String(selectedMailId)
   );
+
+  const folderTitle =
+    selectedFolder === "inbox"
+      ? "Inbox"
+      : selectedFolder === "newsletters"
+      ? "Newsletters"
+      : selectedFolder === "junk"
+      ? "Junk"
+      : selectedFolder === "archive"
+      ? "Archive"
+      : selectedFolder === "trash"
+      ? "Trash"
+      : "Mailbox";
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -171,38 +222,38 @@ export function Mail({
             links={[
               {
                 title: "Inbox",
-                label: unreadCount > 0 ? String(unreadCount) : String(mails.length),
+                label: selectedFolder === "inbox" && unreadCount > 0 ? String(unreadCount) : "",
                 icon: Inbox,
                 variant: selectedFolder === "inbox" ? "default" : "ghost",
-                onClick: () => setSelectedFolder("inbox"),
+                onClick: () => handleSelectFolder("inbox"),
               },
               {
                 title: "Newsletters",
                 label: "",
                 icon: Newspaper,
                 variant: selectedFolder === "newsletters" ? "default" : "ghost",
-                onClick: () => setSelectedFolder("newsletters"),
+                onClick: () => handleSelectFolder("newsletters"),
               },
               {
                 title: "Junk",
                 label: "",
                 icon: AlertOctagon,
                 variant: selectedFolder === "junk" ? "default" : "ghost",
-                onClick: () => setSelectedFolder("junk"),
+                onClick: () => handleSelectFolder("junk"),
               },
               {
                 title: "Archive",
                 label: "",
                 icon: Archive,
                 variant: selectedFolder === "archive" ? "default" : "ghost",
-                onClick: () => setSelectedFolder("archive"),
+                onClick: () => handleSelectFolder("archive"),
               },
               {
                 title: "Trash",
                 label: "",
                 icon: Trash2,
                 variant: selectedFolder === "trash" ? "default" : "ghost",
-                onClick: () => setSelectedFolder("trash"),
+                onClick: () => handleSelectFolder("trash"),
               },
             ]}
           />
@@ -228,31 +279,23 @@ export function Mail({
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
             <div className="flex h-[52px] items-center justify-between px-4 shrink-0">
               <h1 className="text-base font-bold tracking-tight">
-                {selectedFolder === "inbox"
-                  ? "Inbox"
-                  : selectedFolder === "newsletters"
-                  ? "Newsletters"
-                  : selectedFolder === "junk"
-                  ? "Junk Mail"
-                  : selectedFolder === "archive"
-                  ? "Archive"
-                  : "Trash"}
+                {folderTitle}
               </h1>
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  onClick={() => fetchEmails(true)}
+                  onClick={() => fetchEmails(true, selectedFolder)}
                   disabled={refreshing || loading}
-                  title="Refresh mail"
+                  title="Refresh mailbox"
                 >
                   <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin text-primary")} />
                   <span className="sr-only">Refresh</span>
                 </Button>
                 <TabsList className="h-8">
                   <TabsTrigger value="all" className="text-xs px-2.5 h-7">
-                    All mail
+                    All
                   </TabsTrigger>
                   <TabsTrigger value="unread" className="text-xs px-2.5 h-7">
                     Unread {unreadCount > 0 && `(${unreadCount})`}
@@ -268,7 +311,7 @@ export function Mail({
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search emails..."
+                  placeholder={`Search in ${folderTitle.toLowerCase()}...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-8 h-9 text-xs"
@@ -281,7 +324,7 @@ export function Mail({
               {loading ? (
                 <div className="flex h-64 flex-col items-center justify-center p-8 text-muted-foreground">
                   <RefreshCw className="h-6 w-6 animate-spin text-primary" />
-                  <p className="mt-3 text-xs">Fetching messages from IMAP...</p>
+                  <p className="mt-3 text-xs">Loading {folderTitle.toLowerCase()} from IMAP...</p>
                 </div>
               ) : error ? (
                 <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-destructive">
@@ -291,7 +334,7 @@ export function Mail({
                     variant="outline"
                     size="sm"
                     className="mt-4"
-                    onClick={() => fetchEmails(false)}
+                    onClick={() => fetchEmails(false, selectedFolder)}
                   >
                     Retry
                   </Button>
@@ -317,9 +360,15 @@ export function Mail({
             selectedMailId={selectedMailId}
             summaryMail={selectedSummaryMail}
             isRead={selectedSummaryMail ? selectedSummaryMail.read : false}
+            currentFolder={selectedFolder}
             onToggleRead={() => {
               if (selectedSummaryMail) {
                 markMailAsRead(selectedMailId, !selectedSummaryMail.read);
+              }
+            }}
+            onMoveToTrash={() => {
+              if (selectedMailId) {
+                moveToTrash(selectedMailId);
               }
             }}
           />
