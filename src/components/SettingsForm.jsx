@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { getAiSettings, saveAiSettings } from "@/lib/aiCache";
 
-export function SettingsForm() {
+export function SettingsForm({ onBack }) {
   const [baseUrl, setBaseUrl] = useState("http://localhost:11434/v1");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("llama3.2");
@@ -92,17 +92,28 @@ export function SettingsForm() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6 md:p-8">
+    <div className="w-full max-w-3xl mx-auto p-6 md:p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <a
-            href="/mails"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background hover:bg-accent text-foreground transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="sr-only">Zurück zu Mails</span>
-          </a>
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background hover:bg-accent text-foreground transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span className="sr-only">Zurück zu Mails</span>
+            </button>
+          ) : (
+            <a
+              href="/mails"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background hover:bg-accent text-foreground transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span className="sr-only">Zurück zu Mails</span>
+            </a>
+          )}
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
@@ -290,7 +301,7 @@ export function SettingsForm() {
           </Button>
         </div>
 
-        <div className="flex justify-end pt-2">
+        <div className="flex justify-end pt-2 pb-8">
           <Button type="submit" size="default" className="text-xs font-semibold cursor-pointer">
             <Save className="mr-1.5 h-4 w-4" />
             Alle Einstellungen speichern

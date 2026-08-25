@@ -28,6 +28,7 @@ import { AccountSwitcher } from "./mail/AccountSwitcher";
 import { Nav } from "./mail/Nav";
 import { MailList } from "./mail/MailList";
 import { MailDisplay } from "./mail/MailDisplay";
+import { SettingsForm } from "./SettingsForm";
 import {
   getCachedAnalysis,
   setCachedAnalysis,
@@ -39,8 +40,10 @@ export function Mail({
   defaultLayout = [18, 36, 46],
   defaultCollapsed = false,
   navCollapsedSize = 4,
+  defaultView = "mails",
 }) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [currentView, setCurrentView] = useState(defaultView); // "mails" | "settings"
   const [mails, setMails] = useState([]);
   const [accountEmail, setAccountEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -104,7 +107,6 @@ export function Mail({
     isAnalyzingQueue.current = true;
 
     try {
-      // Analyze up to 10 newest unanalyzed emails
       const unanalyzed = items.filter((m) => {
         const id = m.id || m.seq;
         return !getCachedAnalysis(id) && !aiMap[id];
@@ -180,18 +182,16 @@ export function Mail({
 
   // When selected email changes, check if it needs immediate analysis
   useEffect(() => {
-    if (!selectedMailId) return;
+    if (!selectedMailId || currentView !== "mails") return;
 
     const target = mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
     if (!target) return;
 
     const cached = getCachedAnalysis(selectedMailId) || aiMap[selectedMailId];
     if (!cached) {
-      // Trigger live analysis for selected email
       setAiLoading(true);
       setAiError(null);
 
-      // First fetch email content to provide full text to AI
       fetch(`/api/email?seq=${selectedMailId}&folder=${selectedFolder}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((detail) => {
@@ -208,9 +208,10 @@ export function Mail({
       setAiLoading(false);
       setAiError(null);
     }
-  }, [selectedMailId]);
+  }, [selectedMailId, currentView]);
 
   const handleSelectFolder = (newFolder) => {
+    setCurrentView("mails");
     if (newFolder !== selectedFolder) {
       setSelectedFolder(newFolder);
       setSearchQuery("");
@@ -375,7 +376,7 @@ export function Mail({
         direction="horizontal"
         className="h-screen w-screen items-stretch overflow-hidden bg-background"
       >
-        {/* Left Column: Folders & Navigation */}
+        {/* Left Column: Navigation Sidebar (Always persistent) */}
         <ResizablePanel
           defaultSize={defaultLayout[0]}
           collapsedSize={navCollapsedSize}
@@ -396,37 +397,37 @@ export function Mail({
             links={[
               {
                 title: "Inbox",
-                label: selectedFolder === "inbox" && unreadCount > 0 ? String(unreadCount) : "",
+                label: currentView === "mails" && selectedFolder === "inbox" && unreadCount > 0 ? String(unreadCount) : "",
                 icon: Inbox,
-                variant: selectedFolder === "inbox" ? "default" : "ghost",
+                variant: currentView === "mails" && selectedFolder === "inbox" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("inbox"),
               },
               {
                 title: "Newsletters",
                 label: "",
                 icon: Newspaper,
-                variant: selectedFolder === "newsletters" ? "default" : "ghost",
+                variant: currentView === "mails" && selectedFolder === "newsletters" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("newsletters"),
               },
               {
                 title: "Junk",
                 label: "",
                 icon: AlertOctagon,
-                variant: selectedFolder === "junk" ? "default" : "ghost",
+                variant: currentView === "mails" && selectedFolder === "junk" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("junk"),
               },
               {
                 title: "Archive",
                 label: "",
                 icon: Archive,
-                variant: selectedFolder === "archive" ? "default" : "ghost",
+                variant: currentView === "mails" && selectedFolder === "archive" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("archive"),
               },
               {
                 title: "Trash",
                 label: "",
                 icon: Trash2,
-                variant: selectedFolder === "trash" ? "default" : "ghost",
+                variant: currentView === "mails" && selectedFolder === "trash" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("trash"),
               },
             ]}
@@ -439,9 +440,9 @@ export function Mail({
                 title: "Settings",
                 label: "",
                 icon: Settings,
-                variant: "ghost",
+                variant: currentView === "settings" ? "default" : "ghost",
                 onClick: () => {
-                  window.location.href = "/settings";
+                  setCurrentView("settings");
                 },
               },
             ]}
@@ -450,110 +451,121 @@ export function Mail({
 
         <ResizableHandle withHandle />
 
-        {/* Middle Column: Mail List with Search & Tabs */}
-        <ResizablePanel defaultSize={defaultLayout[1]} minSize={25} maxSize={45} className="border-r">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
-            <div className="flex h-[52px] items-center justify-between px-4 shrink-0">
-              <h1 className="text-base font-bold tracking-tight flex items-center gap-1.5">
-                {folderTitle}
-              </h1>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  onClick={() => fetchEmails(true, selectedFolder)}
-                  disabled={refreshing || loading}
-                  title="Refresh mailbox"
-                >
-                  <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin text-primary")} />
-                  <span className="sr-only">Refresh</span>
-                </Button>
-                <TabsList className="h-8">
-                  <TabsTrigger value="all" className="text-xs px-2.5 h-7">
-                    All
-                  </TabsTrigger>
-                  <TabsTrigger value="unread" className="text-xs px-2.5 h-7">
-                    Unread {unreadCount > 0 && `(${unreadCount})`}
-                  </TabsTrigger>
-                </TabsList>
-              </div>
+        {/* Main Content Area: Switches between Mails View and Settings View */}
+        {currentView === "settings" ? (
+          <ResizablePanel defaultSize={defaultLayout[1] + defaultLayout[2]} minSize={50} className="bg-background">
+            <div className="h-full overflow-y-auto">
+              <SettingsForm onBack={() => setCurrentView("mails")} />
             </div>
-
-            <Separator />
-
-            {/* Search Input */}
-            <div className="p-4 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={`Search in ${folderTitle.toLowerCase()}...`}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 h-9 text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Mail Items Scrollable Area */}
-            <div className="flex-1 overflow-y-auto">
-              {loading ? (
-                <div className="flex h-64 flex-col items-center justify-center p-8 text-muted-foreground">
-                  <RefreshCw className="h-6 w-6 animate-spin text-primary" />
-                  <p className="mt-3 text-xs">Loading {folderTitle.toLowerCase()} from IMAP...</p>
+          </ResizablePanel>
+        ) : (
+          <>
+            {/* Middle Column: Mail List with Search & Tabs */}
+            <ResizablePanel defaultSize={defaultLayout[1]} minSize={25} maxSize={45} className="border-r">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
+                <div className="flex h-[52px] items-center justify-between px-4 shrink-0">
+                  <h1 className="text-base font-bold tracking-tight flex items-center gap-1.5">
+                    {folderTitle}
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer"
+                      onClick={() => fetchEmails(true, selectedFolder)}
+                      disabled={refreshing || loading}
+                      title="Refresh mailbox"
+                    >
+                      <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin text-primary")} />
+                      <span className="sr-only">Refresh</span>
+                    </Button>
+                    <TabsList className="h-8">
+                      <TabsTrigger value="all" className="text-xs px-2.5 h-7 cursor-pointer">
+                        All
+                      </TabsTrigger>
+                      <TabsTrigger value="unread" className="text-xs px-2.5 h-7 cursor-pointer">
+                        Unread {unreadCount > 0 && `(${unreadCount})`}
+                      </TabsTrigger>
+                    </TabsList>
+                  </div>
                 </div>
-              ) : error ? (
-                <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-destructive">
-                  <p className="text-sm font-medium">Failed to load emails</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{error}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-4"
-                    onClick={() => fetchEmails(false, selectedFolder)}
-                  >
-                    Retry
-                  </Button>
+
+                <Separator />
+
+                {/* Search Input */}
+                <div className="p-4 shrink-0">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder={`Search in ${folderTitle.toLowerCase()}...`}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-8 h-9 text-xs"
+                    />
+                  </div>
                 </div>
-              ) : (
-                <TabsContent value={activeTab} className="m-0 border-0 outline-none">
-                  <MailList
-                    items={filteredMails}
-                    selectedMailId={selectedMailId}
-                    onSelectMail={handleSelectMail}
-                  />
-                </TabsContent>
-              )}
-            </div>
-          </Tabs>
-        </ResizablePanel>
 
-        <ResizableHandle withHandle />
+                {/* Mail Items Scrollable Area */}
+                <div className="flex-1 overflow-y-auto">
+                  {loading ? (
+                    <div className="flex h-64 flex-col items-center justify-center p-8 text-muted-foreground">
+                      <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+                      <p className="mt-3 text-xs">Loading {folderTitle.toLowerCase()} from IMAP...</p>
+                    </div>
+                  ) : error ? (
+                    <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-destructive">
+                      <p className="text-sm font-medium">Failed to load emails</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{error}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-4 cursor-pointer"
+                        onClick={() => fetchEmails(false, selectedFolder)}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  ) : (
+                    <TabsContent value={activeTab} className="m-0 border-0 outline-none">
+                      <MailList
+                        items={filteredMails}
+                        selectedMailId={selectedMailId}
+                        onSelectMail={handleSelectMail}
+                      />
+                    </TabsContent>
+                  )}
+                </div>
+              </Tabs>
+            </ResizablePanel>
 
-        {/* Right Column: Mail Detail Display with AI Insights */}
-        <ResizablePanel defaultSize={defaultLayout[2]} minSize={30}>
-          <MailDisplay
-            selectedMailId={selectedMailId}
-            summaryMail={selectedSummaryMail}
-            isRead={selectedSummaryMail ? selectedSummaryMail.read : false}
-            currentFolder={selectedFolder}
-            aiAnalysis={currentAiAnalysis}
-            aiLoading={aiLoading}
-            aiError={aiError}
-            onReanalyze={handleReanalyze}
-            onToggleActionItem={handleToggleActionItem}
-            onToggleRead={() => {
-              if (selectedSummaryMail) {
-                markMailAsRead(selectedMailId, !selectedSummaryMail.read);
-              }
-            }}
-            onMoveToTrash={() => {
-              if (selectedMailId) {
-                moveToTrash(selectedMailId);
-              }
-            }}
-          />
-        </ResizablePanel>
+            <ResizableHandle withHandle />
+
+            {/* Right Column: Mail Detail Display with AI Insights */}
+            <ResizablePanel defaultSize={defaultLayout[2]} minSize={30}>
+              <MailDisplay
+                selectedMailId={selectedMailId}
+                summaryMail={selectedSummaryMail}
+                isRead={selectedSummaryMail ? selectedSummaryMail.read : false}
+                currentFolder={selectedFolder}
+                aiAnalysis={currentAiAnalysis}
+                aiLoading={aiLoading}
+                aiError={aiError}
+                onReanalyze={handleReanalyze}
+                onToggleActionItem={handleToggleActionItem}
+                onToggleRead={() => {
+                  if (selectedSummaryMail) {
+                    markMailAsRead(selectedMailId, !selectedSummaryMail.read);
+                  }
+                }}
+                onMoveToTrash={() => {
+                  if (selectedMailId) {
+                    moveToTrash(selectedMailId);
+                  }
+                }}
+              />
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
     </TooltipProvider>
   );
