@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Sparkles,
   ChevronDown,
@@ -9,10 +9,16 @@ import {
   RefreshCw,
   Tag,
   AlertCircle,
+  Code2,
+  Copy,
+  Check,
+  Cpu,
+  ShieldAlert,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getAiSettings } from "@/lib/aiCache";
 
 function getCategoryColor(category) {
   switch (category?.toLowerCase()) {
@@ -49,6 +55,24 @@ export function AiInsightsCard({
   onToggleActionItem,
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showInspector, setShowInspector] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState("raw");
+  const [copied, setCopied] = useState(false);
+  const [devMode, setDevMode] = useState(false);
+
+  useEffect(() => {
+    const settings = getAiSettings();
+    setDevMode(Boolean(settings.developerMode));
+  }, []);
+
+  const handleCopyDebug = (content) => {
+    if (!content) return;
+    navigator.clipboard.writeText(
+      typeof content === "object" ? JSON.stringify(content, null, 2) : String(content)
+    );
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   if (loading) {
     return (
@@ -73,7 +97,7 @@ export function AiInsightsCard({
             variant="ghost"
             size="sm"
             onClick={onReanalyze}
-            className="h-7 text-xs text-destructive hover:bg-destructive/10"
+            className="h-7 text-xs text-destructive hover:bg-destructive/10 cursor-pointer"
           >
             <RefreshCw className="mr-1 h-3 w-3" />
             Erneut versuchen
@@ -87,7 +111,7 @@ export function AiInsightsCard({
     return null;
   }
 
-  const { summary = [], category, tags = [], actionItems = [] } = analysis;
+  const { summary = [], category, tags = [], actionItems = [], _debug } = analysis;
   const hasActionItems = actionItems.length > 0;
 
   return (
@@ -125,12 +149,26 @@ export function AiInsightsCard({
         </div>
 
         <div className="flex items-center gap-1">
+          {/* Developer Inspector Toggle Button */}
+          {devMode && (
+            <Button
+              variant={showInspector ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setShowInspector(!showInspector)}
+              title="Entwickler-Inspektor umschalten"
+              className="h-7 text-[11px] px-2 gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <Code2 className="h-3.5 w-3.5 text-primary" />
+              <span>Dev Inspector</span>
+            </Button>
+          )}
+
           <Button
             variant="ghost"
             size="icon"
             onClick={onReanalyze}
             title="KI-Analyse neu durchführen"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
           >
             <RefreshCw className="h-3 w-3" />
             <span className="sr-only">Neu analysieren</span>
@@ -140,7 +178,7 @@ export function AiInsightsCard({
             size="icon"
             onClick={() => setCollapsed(!collapsed)}
             title={collapsed ? "Details ausklappen" : "Details einklappen"}
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
           >
             {collapsed ? (
               <ChevronDown className="h-3.5 w-3.5" />
@@ -192,7 +230,7 @@ export function AiInsightsCard({
                   >
                     <button
                       type="button"
-                      className="mt-0.5 shrink-0 text-primary hover:opacity-80"
+                      className="mt-0.5 shrink-0 text-primary hover:opacity-80 cursor-pointer"
                     >
                       {action.completed ? (
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -209,6 +247,128 @@ export function AiInsightsCard({
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Developer Inspector Section */}
+          {devMode && showInspector && (
+            <div className="mt-4 rounded-lg border border-border/80 bg-zinc-950 text-zinc-100 p-3.5 text-xs font-mono shadow-inner space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <Code2 className="h-4 w-4 text-emerald-400" />
+                  <span className="font-semibold text-[11px] text-emerald-400">
+                    Developer Mode Telemetrie
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleCopyDebug(
+                        inspectorTab === "raw"
+                          ? _debug?.rawOutput || analysis
+                          : inspectorTab === "prompt"
+                          ? _debug?.anonymizedInput
+                          : analysis
+                      )
+                    }
+                    className="inline-flex items-center gap-1 rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-300 hover:bg-zinc-700 cursor-pointer transition-colors"
+                  >
+                    {copied ? (
+                      <Check className="h-3 w-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                    <span>{copied ? "Kopiert!" : "Kopieren"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Telemetry Chips */}
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                {_debug?.durationMs !== undefined && (
+                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-2 py-0.5 text-zinc-300">
+                    <Clock className="h-3 w-3 text-amber-400" />
+                    {_debug.durationMs} ms
+                  </span>
+                )}
+
+                {_debug?.model && (
+                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-2 py-0.5 text-zinc-300">
+                    <Cpu className="h-3 w-3 text-blue-400" />
+                    {_debug.model}
+                  </span>
+                )}
+
+                {_debug?.promptTokens !== undefined && (
+                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-2 py-0.5 text-zinc-300">
+                    Tokens: {_debug.promptTokens} in / {_debug.completionTokens} out
+                  </span>
+                )}
+
+                <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-2 py-0.5 text-emerald-400">
+                  <ShieldAlert className="h-3 w-3" />
+                  PII-Filter aktiv
+                </span>
+              </div>
+
+              {/* Inspector Sub-Tabs */}
+              <div className="flex gap-1 border-b border-zinc-800 pb-1.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setInspectorTab("raw")}
+                  className={cn(
+                    "px-2 py-0.5 rounded cursor-pointer transition-colors",
+                    inspectorTab === "raw"
+                      ? "bg-zinc-800 text-white font-medium"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  )}
+                >
+                  Raw LLM JSON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectorTab("prompt")}
+                  className={cn(
+                    "px-2 py-0.5 rounded cursor-pointer transition-colors",
+                    inspectorTab === "prompt"
+                      ? "bg-zinc-800 text-white font-medium"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  )}
+                >
+                  Gesendeter Prompt (Anonymisiert)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectorTab("full")}
+                  className={cn(
+                    "px-2 py-0.5 rounded cursor-pointer transition-colors",
+                    inspectorTab === "full"
+                      ? "bg-zinc-800 text-white font-medium"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  )}
+                >
+                  Vollständiges Objekt
+                </button>
+              </div>
+
+              {/* Code viewer */}
+              <div className="max-h-60 overflow-y-auto rounded bg-zinc-900/80 p-2.5 text-[11px] leading-relaxed">
+                {inspectorTab === "raw" ? (
+                  <pre className="whitespace-pre-wrap break-all text-emerald-300">
+                    {_debug?.rawOutput || JSON.stringify(analysis, null, 2)}
+                  </pre>
+                ) : inspectorTab === "prompt" ? (
+                  <pre className="whitespace-pre-wrap break-all text-amber-200">
+                    {_debug?.anonymizedInput || "(Kein Prompt-Log verfügbar für diesen Cache-Eintrag)"}
+                  </pre>
+                ) : (
+                  <pre className="whitespace-pre-wrap break-all text-blue-300">
+                    {JSON.stringify(analysis, null, 2)}
+                  </pre>
+                )}
               </div>
             </div>
           )}

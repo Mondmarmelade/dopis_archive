@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Save,
   ShieldCheck,
+  Code2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ export function SettingsForm() {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("llama3.2");
   const [anonymizePii, setAnonymizePii] = useState(true);
+  const [developerMode, setDeveloperMode] = useState(false);
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -33,11 +35,12 @@ export function SettingsForm() {
     if (current.apiKey) setApiKey(current.apiKey);
     if (current.model) setModel(current.model);
     if (current.anonymizePii !== undefined) setAnonymizePii(current.anonymizePii);
+    if (current.developerMode !== undefined) setDeveloperMode(current.developerMode);
   }, []);
 
   const handleSave = (e) => {
     if (e) e.preventDefault();
-    saveAiSettings({ baseUrl, apiKey, model, anonymizePii });
+    saveAiSettings({ baseUrl, apiKey, model, anonymizePii, developerMode });
     setSavedMessage(true);
     setTimeout(() => setSavedMessage(false), 3000);
   };
@@ -234,6 +237,33 @@ export function SettingsForm() {
               </p>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 Entfernt und maskiert E-Mail-Adressen, Telefonnummern, IBANs, Kreditkartennummern, IP-Adressen und Postanschriften aus dem E-Mail-Text und Absender, bevor die Anfrage den KI-Server erreicht.
+              </p>
+            </div>
+          </label>
+        </div>
+
+        {/* Developer Mode Card */}
+        <div className="rounded-xl border bg-card p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Code2 className="h-4 w-4 text-primary" />
+              Entwickler-Optionen & Debug-Modus
+            </h2>
+          </div>
+
+          <label className="flex items-start gap-3 rounded-lg border p-3.5 cursor-pointer hover:bg-accent/40 transition-colors">
+            <input
+              type="checkbox"
+              checked={developerMode}
+              onChange={(e) => setDeveloperMode(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-primary text-primary focus:ring-primary cursor-pointer"
+            />
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-foreground">
+                Entwickler-Inspektor in der E-Mail-Ansicht aktivieren
+              </p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Ermöglicht das Einsehen der exakten Prompts, des unformatierten JSON-Outputs des Modells, der Latenzzeiten (ms), Tokens und IMAP-Metadaten direkt in jeder E-Mail.
               </p>
             </div>
           </label>

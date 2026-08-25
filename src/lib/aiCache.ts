@@ -8,6 +8,15 @@ export interface AiAnalysisResult {
     completed?: boolean;
   }[];
   timestamp: number;
+  _debug?: {
+    model?: string;
+    durationMs?: number;
+    anonymizedInput?: string;
+    rawOutput?: string;
+    timestamp?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+  };
 }
 
 export interface AiSettings {
@@ -15,22 +24,26 @@ export interface AiSettings {
   apiKey?: string;
   model?: string;
   anonymizePii?: boolean;
+  developerMode?: boolean;
 }
 
 const CACHE_PREFIX = "dopis:ai:cache:";
 const SETTINGS_KEY = "dopis:ai:settings";
 
 export function getAiSettings(): AiSettings {
-  if (typeof window === "undefined") return { anonymizePii: true };
+  if (typeof window === "undefined") return { anonymizePii: true, developerMode: false };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     if (parsed.anonymizePii === undefined) {
       parsed.anonymizePii = true;
     }
+    if (parsed.developerMode === undefined) {
+      parsed.developerMode = false;
+    }
     return parsed;
   } catch {
-    return { anonymizePii: true };
+    return { anonymizePii: true, developerMode: false };
   }
 }
 

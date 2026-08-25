@@ -16,6 +16,8 @@ function cleanEmailText(text, html) {
 }
 
 export async function POST({ request, cookies }) {
+  const startTime = performance.now();
+
   const authCookie = cookies.get("auth");
   if (!authCookie?.value) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -54,6 +56,13 @@ export async function POST({ request, cookies }) {
         category: "Sonstiges",
         tags: [],
         actionItems: [],
+        _debug: {
+          model: "none",
+          durationMs: 0,
+          anonymizedInput: "(empty)",
+          rawOutput: "{}",
+          timestamp: new Date().toISOString(),
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
@@ -114,6 +123,7 @@ REGELN:
       response_format: { type: "json_object" },
     });
 
+    const durationMs = Math.round(performance.now() - startTime);
     let rawOutput = response.choices?.[0]?.message?.content?.trim() || "{}";
 
     // Strip ```json ... ``` wrapper if model included it
@@ -139,6 +149,15 @@ REGELN:
         category: parsed.category || "Sonstiges",
         tags: Array.isArray(parsed.tags) ? parsed.tags : [],
         actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+        _debug: {
+          model: model,
+          durationMs: durationMs,
+          anonymizedInput: userContent,
+          rawOutput: rawOutput,
+          timestamp: new Date().toISOString(),
+          promptTokens: response.usage?.prompt_tokens,
+          completionTokens: response.usage?.completion_tokens,
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
