@@ -24,13 +24,30 @@ import {
 } from "@/components/ui/tooltip";
 import { AiInsightsCard } from "./AiInsightsCard";
 
-// Configure DOMPurify to automatically open all email links in a new window/tab safely
-DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-  if (node.tagName === "A" && node.hasAttribute("href")) {
-    node.setAttribute("target", "_blank");
-    node.setAttribute("rel", "noopener noreferrer");
+let isHookAdded = false;
+
+function sanitizeEmailHtml(rawHtml) {
+  if (!rawHtml) return "";
+  if (typeof window === "undefined") return "";
+
+  try {
+    if (!isHookAdded && typeof DOMPurify?.addHook === "function") {
+      DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+        if (node.tagName === "A" && node.hasAttribute("href")) {
+          node.setAttribute("target", "_blank");
+          node.setAttribute("rel", "noopener noreferrer");
+        }
+      });
+      isHookAdded = true;
+    }
+
+    return DOMPurify.sanitize(rawHtml, {
+      ADD_ATTR: ["target", "rel"],
+    });
+  } catch (e) {
+    return rawHtml;
   }
-});
+}
 
 function formatFullDate(dateString) {
   if (!dateString) return "";
@@ -344,9 +361,7 @@ export function MailDisplay({
               <div
                 className="prose prose-sm max-w-none dark:prose-invert [&_a]:text-blue-600 [&_a]:underline [&_img]:max-w-full [&_table]:border-collapse"
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(detail.html, {
-                    ADD_ATTR: ["target", "rel"],
-                  }),
+                  __html: sanitizeEmailHtml(detail.html),
                 }}
               />
             ) : detail?.text ? (
