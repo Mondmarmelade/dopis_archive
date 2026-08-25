@@ -1,11 +1,4 @@
 ---
-import UnauthLayout from "../layouts/UnauthLayout.astro";
-Astro.cookies.delete("auth");
-return Astro.redirect("/");
+Astro.cookies.delete("auth", { path: "/" });
+return Astro.redirect("/login");
 ---
-
-<UnauthLayout title="Dashboard">
-  <main>
-    <p>you will be logged out shortly</p>
-  </main>
-</UnauthLayout>

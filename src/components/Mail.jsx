@@ -57,7 +57,7 @@ export function Mail({
       const res = await fetch("/api/emails");
       if (!res.ok) {
         if (res.status === 401) {
-          window.location.href = "/login";
+          window.location.href = "/logout";
           return;
         }
         throw new Error(`Server returned status ${res.status}`);

@@ -2,40 +2,95 @@
 import UnauthLayout from "../layouts/UnauthLayout.astro";
 import { Icon } from "astro-icon/components";
 import { createCookie } from "../scripts/createCookie";
+import { ImapFlow } from "imapflow";
+
+let errorMessage = "";
+let enteredUser = "";
+let enteredHost = "imap.ionos.de";
+let enteredPort = "993";
 
 if (Astro.request.method === "POST") {
-  // console.log("POST LOGIN");
   try {
     const data = await Astro.request.formData();
-    const formatData = [
-      { user: data.get("user") },
-      { pass: data.get("pass") },
-      { host: data.get("host") },
-      { port: data.get("port") },
-    ];
-    createCookie({ data: formatData, context: Astro });
+    enteredUser = (data.get("user") || "").toString();
+    const enteredPass = (data.get("pass") || "").toString();
+    enteredHost = (data.get("host") || "imap.ionos.de").toString();
+    enteredPort = (data.get("port") || "993").toString();
 
-    return Astro.redirect("/");
+    // Verify credentials against IMAP server before saving cookie
+    const testClient = new ImapFlow({
+      host: enteredHost,
+      port: Number(enteredPort) || 993,
+      secure: true,
+      auth: {
+        user: enteredUser,
+        pass: enteredPass,
+      },
+      logger: false,
+    });
+
+    try {
+      await testClient.connect();
+      await testClient.logout();
+    } catch (authError) {
+      console.error("Login IMAP verification failed:", authError);
+      errorMessage =
+        "IMAP-Anmeldung fehlgeschlagen. Bitte prüfe E-Mail-Adresse, Passwort und Server-Einstellungen.";
+    }
+
+    if (!errorMessage) {
+      const formatData = [
+        { user: enteredUser },
+        { pass: enteredPass },
+        { host: enteredHost },
+        { port: enteredPort },
+      ];
+      createCookie({ data: formatData, context: Astro });
+      return Astro.redirect("/");
+    }
   } catch (error) {
     if (error instanceof Error) {
-      console.error(error.message);
+      errorMessage = error.message;
+      console.error("Login exception:", error.message);
     }
   }
 }
 ---
 
-<UnauthLayout title="Dashboard">
+<UnauthLayout title="Login">
   <main>
     <Icon class="logo" name="logo" />
     <p class="headline">Enter IMAP Credentials:</p>
+
+    {
+      errorMessage && (
+        <div class="error-banner">
+          <p>{errorMessage}</p>
+        </div>
+      )
+    }
+
     <form id="imap-form" method="POST" action="/login">
       <div>
-        <label for="user">Username:</label>
-        <input type="email" id="user" name="user" required />
+        <label for="user">Username / E-Mail:</label>
+        <input
+          type="email"
+          id="user"
+          name="user"
+          value={enteredUser}
+          required
+          placeholder="name@domain.de"
+        />
       </div>
       <div>
         <label for="pass">Password:</label>
-        <input type="password" id="pass" name="pass" required />
+        <input
+          type="password"
+          id="pass"
+          name="pass"
+          required
+          placeholder="••••••••"
+        />
       </div>
       <div>
         <label for="host">Host:</label>
@@ -43,15 +98,21 @@ if (Astro.request.method === "POST") {
           type="text"
           id="host"
           name="host"
-          value="imap.ionos.de"
+          value={enteredHost}
           required
         />
       </div>
       <div>
         <label for="port">Port:</label>
-        <input type="number" id="port" name="port" value="993" required />
+        <input
+          type="number"
+          id="port"
+          name="port"
+          value={enteredPort}
+          required
+        />
       </div>
-      <button type="submit">Submit</button>
+      <button type="submit">Connect to Mailbox</button>
     </form>
   </main>
 </UnauthLayout>
@@ -59,65 +120,88 @@ if (Astro.request.method === "POST") {
 <style>
   main {
     width: 100vw;
-    height: 80vh;
+    height: 85vh;
     display: flex;
     justify-content: center;
     align-items: center;
     flex-direction: column;
+    padding: 20px;
+    box-sizing: border-box;
   }
 
   .logo {
     font-size: 4.5rem;
+    margin-bottom: 10px;
   }
 
   .headline {
     margin: 0 0 15px 0;
-    font-size: 1.8rem;
+    font-size: 1.6rem;
     font-weight: 600;
     color: #3661a4;
   }
 
+  .error-banner {
+    width: 80%;
+    max-width: 400px;
+    background-color: #fee2e2;
+    border: 1px solid #f87171;
+    color: #991b1b;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 0.875rem;
+    text-align: center;
+  }
+
   form {
     width: 80%;
-
-    @media (min-width: 800px) {
-      width: 60%;
-    }
-
-    @media (min-width: 1200px) {
-      width: 20%;
-    }
+    max-width: 400px;
 
     div {
       display: flex;
       flex-direction: column;
-      margin-top: 5px;
+      margin-top: 8px;
+    }
+
+    label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 4px;
     }
 
     input {
-      border-width: 1;
-      border-style: solid;
-      background-color: #ededed;
+      border: 1px solid #d1d5db;
+      background-color: #ffffff;
       outline: none;
-      border-radius: 5px;
-      padding: 10px;
-      font-size: 1rem;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      transition: border-color 0.15s ease;
     }
   }
 
   input:focus {
-    border-color: black;
+    border-color: #3661a4;
+    box-shadow: 0 0 0 2px rgba(54, 97, 164, 0.15);
   }
 
   button {
     width: 100%;
-    height: 50px;
+    height: 46px;
     background-color: #3661a4;
     color: white;
     border: 0;
-    border-radius: 5px;
-    margin-top: 15px;
-    font-size: 1rem;
+    border-radius: 6px;
+    margin-top: 20px;
+    font-size: 0.95rem;
+    font-weight: 600;
     cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  button:hover {
+    background-color: #2b4e85;
   }
 </style>
