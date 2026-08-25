@@ -11,6 +11,7 @@ import {
   ReplyAll,
   Trash2,
   Mail as MailIcon,
+  MailCheck,
   Loader2,
   RefreshCw,
 } from "lucide-react";
@@ -56,7 +57,7 @@ function getInitials(name, email) {
   return "M";
 }
 
-export function MailDisplay({ selectedMailId, summaryMail }) {
+export function MailDisplay({ selectedMailId, summaryMail, isRead, onToggleRead }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -151,6 +152,32 @@ export function MailDisplay({ selectedMailId, summaryMail }) {
               </Button>
             </TooltipTrigger>
             <TooltipContent>Move to trash</TooltipContent>
+          </Tooltip>
+
+          <Separator orientation="vertical" className="mx-1 h-6" />
+
+          {/* Toggle Read / Unread Status */}
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleRead}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              >
+                {isRead ? (
+                  <MailIcon className="h-4 w-4" />
+                ) : (
+                  <MailCheck className="h-4 w-4 text-blue-600" />
+                )}
+                <span className="sr-only">
+                  {isRead ? "Mark as unread" : "Mark as read"}
+                </span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isRead ? "Mark as unread" : "Mark as read"}
+            </TooltipContent>
           </Tooltip>
         </div>
 

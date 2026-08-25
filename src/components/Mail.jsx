@@ -45,6 +45,36 @@ export function Mail({
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedMailId, setSelectedMailId] = useState(null);
 
+  const markMailAsRead = async (seq, isRead) => {
+    if (!seq) return;
+
+    // 1. Optimistic UI update: instantly update blue dot and counter
+    setMails((prev) =>
+      prev.map((m) =>
+        String(m.id || m.seq) === String(seq) ? { ...m, read: isRead } : m
+      )
+    );
+
+    // 2. Persist flag to IMAP server in background
+    try {
+      await fetch("/api/flags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seq, seen: isRead }),
+      });
+    } catch (err) {
+      console.error("Failed to sync read status with IMAP:", err);
+    }
+  };
+
+  const handleSelectMail = (id) => {
+    setSelectedMailId(id);
+    const target = mails.find((m) => String(m.id || m.seq) === String(id));
+    if (target && !target.read) {
+      markMailAsRead(id, true);
+    }
+  };
+
   const fetchEmails = async (isManualRefresh = false) => {
     if (isManualRefresh) {
       setRefreshing(true);
@@ -69,7 +99,12 @@ export function Mail({
 
       // Auto-select first email if none selected
       if (!selectedMailId && fetchedMails.length > 0) {
-        setSelectedMailId(fetchedMails[0].id || fetchedMails[0].seq);
+        const first = fetchedMails[0];
+        const firstId = first.id || first.seq;
+        setSelectedMailId(firstId);
+        if (!first.read) {
+          markMailAsRead(firstId, true);
+        }
       }
     } catch (err) {
       setError(err.message || "Failed to load emails");
@@ -266,7 +301,7 @@ export function Mail({
                   <MailList
                     items={filteredMails}
                     selectedMailId={selectedMailId}
-                    onSelectMail={(id) => setSelectedMailId(id)}
+                    onSelectMail={handleSelectMail}
                   />
                 </TabsContent>
               )}
@@ -281,6 +316,12 @@ export function Mail({
           <MailDisplay
             selectedMailId={selectedMailId}
             summaryMail={selectedSummaryMail}
+            isRead={selectedSummaryMail ? selectedSummaryMail.read : false}
+            onToggleRead={() => {
+              if (selectedSummaryMail) {
+                markMailAsRead(selectedMailId, !selectedSummaryMail.read);
+              }
+            }}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
