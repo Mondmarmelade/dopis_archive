@@ -67,7 +67,7 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
             type="button"
             onClick={() => onSelectMail(item.id || item.seq)}
             className={cn(
-              "flex flex-col items-start gap-2 rounded-lg border p-3 text-left text-sm transition-all hover:bg-accent/60",
+              "flex flex-col items-start gap-2 rounded-lg border p-3 text-left text-sm transition-all cursor-pointer hover:bg-accent/60",
               isSelected && "bg-muted border-primary/30 shadow-xs",
               !item.read && "font-medium"
             )}
