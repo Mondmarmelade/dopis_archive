@@ -1,6 +1,7 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { SenderAvatar } from "./SenderAvatar";
 
 function formatDate(dateString) {
   if (!dateString) return "";
@@ -23,25 +24,6 @@ function formatDate(dateString) {
   }
 
   return date.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
-}
-
-function getSenderDomain(email) {
-  if (!email || typeof email !== "string" || !email.includes("@")) return "";
-  return email.split("@")[1].toLowerCase();
-}
-
-function getInitials(name, email) {
-  if (name && name.trim().length > 0) {
-    const parts = name.trim().split(" ");
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  }
-  if (email && email.length > 0) {
-    return email.slice(0, 2).toUpperCase();
-  }
-  return "M";
 }
 
 function getCategoryColor(category) {
@@ -85,8 +67,6 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
     <div className="flex flex-col gap-2 p-4 pt-0">
       {items.map((item) => {
         const isSelected = String(item.id) === String(selectedMailId);
-        const domain = getSenderDomain(item.email);
-        const initials = getInitials(item.name, item.email);
         const category = item.ai?.category || item.category;
         const tags = item.ai?.tags || item.tags || [];
 
@@ -96,68 +76,57 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
             type="button"
             onClick={() => onSelectMail(item.id || item.seq)}
             className={cn(
-              "flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left text-sm transition-all cursor-pointer hover:bg-accent/60",
+              "flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition-all cursor-pointer hover:bg-accent/60",
               isSelected && "bg-muted border-primary/30 shadow-xs",
               !item.read && "font-medium"
             )}
           >
-            <div className="flex w-full items-center justify-between gap-2">
-              <div className="flex items-center gap-2 overflow-hidden">
-                {domain ? (
-                  <img
-                    src={`https://logo.clearbit.com/${domain}`}
-                    alt=""
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
-                    className="h-5 w-5 rounded-full object-cover shrink-0 bg-muted"
-                  />
-                ) : (
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                    {initials}
-                  </div>
-                )}
-                <span className="truncate text-xs font-semibold text-foreground">
-                  {item.name || item.email}
-                </span>
-                {!item.read && (
-                  <span className="flex h-2 w-2 rounded-full bg-blue-600 shrink-0" title="Unread" />
-                )}
-              </div>
-              <span
-                className={cn(
-                  "text-[11px] whitespace-nowrap",
-                  isSelected ? "text-foreground" : "text-muted-foreground"
-                )}
-              >
-                {formatDate(item.date)}
-              </span>
-            </div>
-
-            <div className="w-full text-xs font-medium text-foreground truncate">
-              {item.subject || "(No Subject)"}
-            </div>
-
-            {/* AI Category & Tag Badges */}
-            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-              {category && (
+            <SenderAvatar email={item.email} size="md" className="mt-0.5" />
+            <div className="flex-1 min-w-0 flex flex-col gap-1">
+              <div className="flex w-full items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 overflow-hidden">
+                  <span className="truncate text-xs font-semibold text-foreground">
+                    {item.name || item.email}
+                  </span>
+                  {!item.read && (
+                    <span className="flex h-2 w-2 rounded-full bg-blue-600 shrink-0" title="Unread" />
+                  )}
+                </div>
                 <span
                   className={cn(
-                    "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border",
-                    getCategoryColor(category)
+                    "text-[11px] whitespace-nowrap shrink-0",
+                    isSelected ? "text-foreground" : "text-muted-foreground"
                   )}
                 >
-                  {category}
+                  {formatDate(item.date)}
                 </span>
-              )}
-              {tags.slice(0, 2).map((tag, idx) => (
-                <span
-                  key={idx}
-                  className="inline-flex items-center rounded bg-muted/60 border px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                >
-                  {tag}
-                </span>
-              ))}
+              </div>
+
+              <div className="w-full text-xs font-medium text-foreground truncate">
+                {item.subject || "(No Subject)"}
+              </div>
+
+              {/* AI Category & Tag Badges */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                {category && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border",
+                      getCategoryColor(category)
+                    )}
+                  >
+                    {category}
+                  </span>
+                )}
+                {tags.slice(0, 2).map((tag, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center rounded bg-muted/60 border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
             </div>
           </button>
         );

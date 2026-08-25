@@ -12,6 +12,7 @@ import {
   Save,
   ShieldCheck,
   Code2,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ export function SettingsForm({ onBack }) {
   const [model, setModel] = useState("llama3.2");
   const [anonymizePii, setAnonymizePii] = useState(true);
   const [developerMode, setDeveloperMode] = useState(false);
+  const [logoDevToken, setLogoDevToken] = useState("");
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -36,11 +38,19 @@ export function SettingsForm({ onBack }) {
     if (current.model) setModel(current.model);
     if (current.anonymizePii !== undefined) setAnonymizePii(current.anonymizePii);
     if (current.developerMode !== undefined) setDeveloperMode(current.developerMode);
+    if (current.logoDevToken) setLogoDevToken(current.logoDevToken);
   }, []);
 
   const handleSave = (e) => {
     if (e) e.preventDefault();
-    saveAiSettings({ baseUrl, apiKey, model, anonymizePii, developerMode });
+    saveAiSettings({
+      baseUrl,
+      apiKey,
+      model,
+      anonymizePii,
+      developerMode,
+      logoDevToken,
+    });
     setSavedMessage(true);
     setTimeout(() => setSavedMessage(false), 3000);
   };
@@ -120,7 +130,7 @@ export function SettingsForm({ onBack }) {
               Einstellungen & KI-Konfiguration
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Verbinde deinen bevorzugten OpenAI-kompatiblen Endpoint (Ollama, Hetzner, OpenAI, vLLM).
+              Verbinde deinen bevorzugten OpenAI-kompatiblen Endpoint (Ollama, Hetzner, OpenAI, vLLM) & Logo.dev.
             </p>
           </div>
         </div>
@@ -223,6 +233,43 @@ export function SettingsForm({ onBack }) {
               <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${testing ? "animate-spin" : ""}`} />
               {testing ? "Teste Verbindung..." : "Verbindung testen"}
             </Button>
+          </div>
+        </div>
+
+        {/* Logo.dev Configuration Card */}
+        <div className="rounded-xl border bg-card p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <ImageIcon className="h-4 w-4 text-primary" />
+              Absender-Logos (Logo.dev)
+            </h2>
+            <a
+              href="https://www.logo.dev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:underline"
+            >
+              logo.dev besuchen ↗
+            </a>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+              <span>Logo.dev Publishable Key (Token)</span>
+              <span className="text-[11px] font-normal text-muted-foreground">
+                Format: <code>pk_...</code>
+              </span>
+            </label>
+            <Input
+              type="text"
+              value={logoDevToken}
+              onChange={(e) => setLogoDevToken(e.target.value)}
+              placeholder="pk_xxxxxxxxxxxxxxxx"
+              className="text-xs font-mono"
+            />
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Logo.dev ist der offizielle Nachfolger der Clearbit Logo API für gestochen scharfe Unternehmenslogos in deiner E-Mail-Liste.
+            </p>
           </div>
         </div>
 

@@ -25,6 +25,7 @@ export interface AiSettings {
   model?: string;
   anonymizePii?: boolean;
   developerMode?: boolean;
+  logoDevToken?: string;
 }
 
 const CACHE_PREFIX = "dopis:ai:cache:";

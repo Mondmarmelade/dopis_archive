@@ -23,6 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { AiInsightsCard } from "./AiInsightsCard";
+import { SenderAvatar } from "./SenderAvatar";
 
 let isHookAdded = false;
 
@@ -62,25 +63,6 @@ function formatFullDate(dateString) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function getSenderDomain(email) {
-  if (!email || typeof email !== "string" || !email.includes("@")) return "";
-  return email.split("@")[1].toLowerCase();
-}
-
-function getInitials(name, email) {
-  if (name && name.trim().length > 0) {
-    const parts = name.trim().split(" ");
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  }
-  if (email && email.length > 0) {
-    return email.slice(0, 2).toUpperCase();
-  }
-  return "M";
 }
 
 export function MailDisplay({
@@ -162,8 +144,6 @@ export function MailDisplay({
 
   const senderEmail = detail?.from?.address || summaryMail?.email || "";
   const senderName = detail?.from?.name || summaryMail?.name || senderEmail;
-  const domain = getSenderDomain(senderEmail);
-  const initials = getInitials(senderName, senderEmail);
   const subject = detail?.subject || summaryMail?.subject || "(No Subject)";
   const dateStr = detail?.date || summaryMail?.date;
   const isTrashFolder = currentFolder === "trash";
@@ -290,20 +270,11 @@ export function MailDisplay({
         <div className="flex flex-1 flex-col overflow-y-auto">
           {/* Header section */}
           <div className="flex items-start gap-4 p-5">
-            {domain ? (
-              <img
-                src={`https://logo.clearbit.com/${domain}`}
-                alt=""
-                onError={(e) => {
-                  e.currentTarget.style.display = "none";
-                }}
-                className="h-10 w-10 rounded-full object-cover shrink-0 bg-muted border"
-              />
-            ) : (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-                {initials}
-              </div>
-            )}
+            <SenderAvatar
+              name={senderName}
+              email={senderEmail}
+              size="lg"
+            />
 
             <div className="grid gap-1 flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
