@@ -2,54 +2,80 @@ import { ImapFlow } from "imapflow";
 import { decryptData } from "../../utils/cryptography";
 
 export async function GET({ cookies, params, request }) {
-  const credentials = decryptData(cookies.get("auth").value); //get login data from cookie -> decrypts them
+  const authCookie = cookies.get("auth");
+  if (!authCookie?.value) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized. Please log in." }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const credentials = decryptData(authCookie.value);
+  if (!credentials || credentials.length < 4) {
+    return new Response(
+      JSON.stringify({ error: "Invalid credentials in session." }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
 
   const client = new ImapFlow({
     host: credentials[2].host,
-    port: credentials[3].port,
+    port: Number(credentials[3].port) || 993,
     secure: true,
     auth: {
       user: credentials[0].user,
       pass: credentials[1].pass,
     },
-    logger: false, // activate in dev for better debugging
+    logger: false,
   });
 
   try {
     try {
       await client.connect();
-      console.log("Connected to IMAP server");
     } catch (connectError) {
-      console.error("Connection Error:", connectError);
+      console.error("IMAP Connection Error:", connectError);
       return new Response(
         JSON.stringify({
-          error:
-            "Failed to connect to IMAP server. Please check your credentials.",
+          error: "Failed to connect to IMAP server. Please check your credentials.",
         }),
-        {
-          status: 401,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
+        { status: 401, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    let lock = await client.getMailboxLock("INBOX");
+    const lock = await client.getMailboxLock("INBOX");
 
     try {
-      let msgs = [];
+      const msgs = [];
 
-      for await (let msg of client.fetch("1:*", {
+      for await (const msg of client.fetch("1:*", {
         uid: true,
         envelope: true,
+        flags: true,
       })) {
-        msgs.push(msg);
+        const fromItem = msg.envelope?.from?.[0];
+        const isRead = msg.flags ? msg.flags.has("\\Seen") : false;
+
+        msgs.push({
+          id: String(msg.seq),
+          seq: msg.seq,
+          uid: msg.uid,
+          name: fromItem?.name || fromItem?.address || "Unknown",
+          email: fromItem?.address || "",
+          subject: msg.envelope?.subject || "(No Subject)",
+          date: msg.envelope?.date ? new Date(msg.envelope.date).toISOString() : new Date().toISOString(),
+          read: isRead,
+          envelope: msg.envelope,
+          flags: msg.flags ? Array.from(msg.flags) : [],
+        });
       }
+
+      // Reverse so newest is first
+      msgs.reverse();
 
       return new Response(
         JSON.stringify({
-          msgs: msgs.reverse(), // reverses order of emails -> so newest mail is first in array
+          account: credentials[0].user,
+          msgs,
         }),
         {
           status: 200,
@@ -64,11 +90,13 @@ export async function GET({ cookies, params, request }) {
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
     });
   } finally {
-    await client.logout();
+    try {
+      await client.logout();
+    } catch (e) {
+      // ignore logout failure on closed socket
+    }
   }
 }

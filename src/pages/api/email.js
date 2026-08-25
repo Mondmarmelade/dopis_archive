@@ -1,75 +1,98 @@
 import { ImapFlow } from "imapflow";
+import PostalMime from "postal-mime";
 import { decryptData } from "../../utils/cryptography";
 
 export async function GET({ cookies, params, request }) {
-  const credentials = decryptData(cookies.get("auth").value); //get login data from cookie -> decrypts them
+  const authCookie = cookies.get("auth");
+  if (!authCookie?.value) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized. Please log in." }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const credentials = decryptData(authCookie.value);
+  if (!credentials || credentials.length < 4) {
+    return new Response(
+      JSON.stringify({ error: "Invalid credentials." }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
 
   const url = new URL(request.url);
-  const emailSeq = url.searchParams.get("seq"); // Extract the 'uid' query parameter
+  const emailSeq = url.searchParams.get("seq");
 
-  if (emailSeq === "" || emailSeq === null) {
+  if (!emailSeq) {
     return new Response(
-      JSON.stringify({
-        error: "Bad Request; Check if the sequence exists. 1",
-      }),
-      {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
+      JSON.stringify({ error: "Bad Request: Missing sequence parameter 'seq'." }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
     );
   }
 
   const client = new ImapFlow({
     host: credentials[2].host,
-    port: credentials[3].port,
+    port: Number(credentials[3].port) || 993,
     secure: true,
     auth: {
       user: credentials[0].user,
       pass: credentials[1].pass,
     },
-    logger: false, // activate in dev for better debugging
+    logger: false,
   });
 
   try {
     try {
       await client.connect();
-      console.log("Connected to IMAP server");
     } catch (connectError) {
-      console.error("Connection Error:", connectError);
+      console.error("IMAP Connection Error:", connectError);
       return new Response(
         JSON.stringify({
-          error:
-            "Failed to connect to IMAP server. Please check your credentials. 2",
+          error: "Failed to connect to IMAP server. Please check your credentials.",
         }),
-        {
-          status: 401,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
+        { status: 401, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    let lock = await client.getMailboxLock("INBOX");
+    const lock = await client.getMailboxLock("INBOX");
 
     try {
-      let lastMsg = await client.fetchOne(`${emailSeq}`, {
+      const msg = await client.fetchOne(`${emailSeq}`, {
         uid: true,
         source: true,
         envelope: true,
+        flags: true,
       });
 
-      if (lastMsg === false) {
-        throw new Error("Bad Request; Check if the sequence exists.");
+      if (!msg || !msg.source) {
+        return new Response(
+          JSON.stringify({ error: "Email not found or empty source." }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        );
       }
+
+      // Parse RFC822 raw message with PostalMime
+      const parser = new PostalMime();
+      const parsed = await parser.parse(msg.source);
 
       return new Response(
         JSON.stringify({
-          seq: lastMsg.seq,
-          uid: lastMsg.uid,
-          content: lastMsg.source.toString(),
+          id: String(msg.seq),
+          seq: msg.seq,
+          uid: msg.uid,
+          subject: parsed.subject || msg.envelope?.subject || "(No Subject)",
+          from: parsed.from || msg.envelope?.from?.[0] || { name: "", address: "" },
+          to: parsed.to || msg.envelope?.to || [],
+          cc: parsed.cc || [],
+          date: parsed.date || (msg.envelope?.date ? new Date(msg.envelope.date).toISOString() : new Date().toISOString()),
+          html: parsed.html || null,
+          text: parsed.text || null,
+          attachments: (parsed.attachments || []).map((att) => ({
+            filename: att.filename,
+            mimeType: att.mimeType,
+            disposition: att.disposition,
+            size: att.content ? att.content.byteLength : 0,
+          })),
+          flags: msg.flags ? Array.from(msg.flags) : [],
         }),
         {
           status: 200,
@@ -84,11 +107,13 @@ export async function GET({ cookies, params, request }) {
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
     });
   } finally {
-    await client.logout();
+    try {
+      await client.logout();
+    } catch (e) {
+      // ignore
+    }
   }
 }
