@@ -23,6 +23,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+// Configure DOMPurify to automatically open all email links in a new window/tab safely
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.tagName === "A" && node.hasAttribute("href")) {
+    node.setAttribute("target", "_blank");
+    node.setAttribute("rel", "noopener noreferrer");
+  }
+});
+
 function formatFullDate(dateString) {
   if (!dateString) return "";
   const date = new Date(dateString);
@@ -319,9 +327,11 @@ export function MailDisplay({
           <div className="flex-1 p-5 overflow-x-auto text-sm text-foreground leading-relaxed">
             {detail?.html ? (
               <div
-                className="prose prose-sm max-w-none dark:prose-invert [&_a]:text-blue-600 [&_img]:max-w-full [&_table]:border-collapse"
+                className="prose prose-sm max-w-none dark:prose-invert [&_a]:text-blue-600 [&_a]:underline [&_img]:max-w-full [&_table]:border-collapse"
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(detail.html),
+                  __html: DOMPurify.sanitize(detail.html, {
+                    ADD_ATTR: ["target", "rel"],
+                  }),
                 }}
               />
             ) : detail?.text ? (
