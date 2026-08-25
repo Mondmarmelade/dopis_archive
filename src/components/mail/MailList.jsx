@@ -46,6 +46,12 @@ function getInitials(name, email) {
 
 function getCategoryColor(category) {
   switch (category?.toLowerCase()) {
+    case "spam":
+    case "phishing":
+      return "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20";
+    case "werbung":
+    case "angebote":
+      return "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
     case "rechnung":
     case "finanzen":
       return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20";
@@ -57,7 +63,9 @@ function getCategoryColor(category) {
     case "benachrichtigung":
       return "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20";
     case "persönlich":
-      return "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
+      return "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20";
+    case "update":
+      return "bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/20";
     default:
       return "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300 border-zinc-500/20";
   }

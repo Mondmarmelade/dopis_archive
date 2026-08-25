@@ -48,30 +48,45 @@ export async function POST({ request, cookies }) {
     );
   }
 
-  const systemPrompt = `Du bist ein intelligenter E-Mail-Assistent für den E-Mail-Client 'Dopis'.
-Deine Aufgabe ist es, eine E-Mail strukturiert zu analysieren und ein valides JSON-Objekt zurückzugeben.
+  const systemPrompt = `Du bist ein hochentwickelter E-Mail-Klassifizierungs- und Analyse-Assistent für den E-Mail-Client 'Dopis'.
+Deine Aufgabe ist es, die E-Mail präzise zu kategorisieren, zusammenzufassen und etwaige Handlungsaufforderungen zu extrahieren.
 
-Antworte IMMER und AUSSCHLIESSLICH mit einem JSON-Objekt im folgenden Format (ohne Markdown-Formatierungsblöcke oder zusätzlichen Text):
+Antworte IMMER und AUSSCHLIESSLICH mit einem validen JSON-Objekt im folgenden Format (kein Markdown, keine Backticks):
 {
   "summary": [
     "Prägnanter Kernpunkt 1 (auf Deutsch)",
     "Prägnanter Kernpunkt 2 (auf Deutsch)"
   ],
-  "category": "Eine aus: Rechnung, Newsletter, Dringend, Benachrichtigung, Persönlich, Update, Sonstiges",
-  "tags": ["1-3 kurze, relevante Stichworte/Tags"],
+  "category": "Eine exakte Kategorie aus der Liste unten",
+  "tags": ["1-3 kurze, relevante Schlagworte"],
   "actionItems": [
     {
-      "task": "Konkrete To-Do oder Handlungsaufforderung (falls vorhanden)",
+      "task": "Konkrete To-Do oder Handlungsaufforderung",
       "due": "Frist/Datum oder null"
     }
   ]
 }
 
-Regeln:
+KATEGORIEN & UNTERSCHEIDUNGSREGELN (Wähle genau eine):
+1. "Spam": Unerwünschte Massenmails, Betrug, Phishing, verdächtige Gewinne/Erbschaften, dubiose Krypto-/Pillenangebote, gefälschte Rechnungen, unseriöse unbekannte Absender.
+2. "Werbung": Legitime kommerzielle Produktwerbung, Rabattaktionen, Sonderangebote, Sales, Shopping-Deals von bekannten Marken und Online-Shops (z.B. Amazon Deals, Zalando, Otto, SaaS Promo).
+3. "Newsletter": Abonnierte redaktionelle Inhalte, Fachartikel, Blogs, Magazine, Wissensbeiträge, wöchentliche/monatliche Digests.
+4. "Rechnung": Kaufbelege, Rechnungen, Zahlungsbestätigungen, Quittungen, Bank-Abrechnungen, Verträge mit Beträgen.
+5. "Benachrichtigung": Automatische Systemmeldungen, Sicherheitswarnungen, Login-Alerts, 2FA-Codes, Paket-/Versand-Tracking, Statusänderungen.
+6. "Dringend": Zeitkritische persönliche oder berufliche Anfragen mit hoher Priorität oder naher Deadline.
+7. "Persönlich": Direkte 1:1-Kommunikation von Freunden, Familie, Kollegen oder Kunden.
+8. "Update": Produkt-Updates, Release Notes, Changelogs, Plattform-Ankündigungen.
+9. "Sonstiges": Alles, was nicht in die obigen Kategorien passt.
+
+WICHTIGE UNTERSCHEIDUNGSHILFE:
+- "Werbung" vs "Spam": Werbung kommt von echten, legalen Shops/Diensten mit Rabatten/Produkten. Spam ist betrügerisch, aggressiv, phishing-verdächtig oder unverlangter dubioser Müll.
+- "Werbung" vs "Newsletter": Werbung will Produkte/Dienste verkaufen oder bewerben. Ein Newsletter liefert redaktionellen Inhalt, Wissen oder Branchen-News.
+- "Rechnung" vs "Benachrichtigung": Eine Rechnung enthält Geldbeträge oder Zahlungsbelege. Eine Benachrichtigung informiert über Status (z.B. "Paket versandt", "Passwort geändert").
+
+REGELN:
 1. 'summary': 1 bis maximal 3 kurze, informative Bullet-Points auf Deutsch.
-2. 'category': Wähle genau die passendste Kategorie (z.B. 'Rechnung' bei Rechnungen/Zahlungen, 'Newsletter' bei Newslettern/Werbung, 'Dringend' bei dringenden Anfragen, 'Benachrichtigung' bei Systemmeldungen, 'Persönlich' bei privater Korrespondenz, 'Update' bei Statusberichten).
-3. 'tags': 1 bis 3 kurze Schlagwörter (z.B. 'Finanzen', 'Termin', 'Hosting', 'Sicherheit').
-4. 'actionItems': Nur Aufgaben/To-Dos erfassen, die der Empfänger der E-Mail tatsächlich erledigen soll. Falls keine Handlungsaufforderung existiert, leeres Array [].`;
+2. 'tags': 1 bis 3 kurze Stichwörter (z.B. 'Rabatt', 'Finanzen', 'Sicherheit', 'Versand').
+3. 'actionItems': Nur Aufgaben/To-Dos erfassen, die der Empfänger tatsächlich erledigen soll (z.B. "Zahlung veranlassen", "Termin bestätigen"). Bei reiner Werbung oder Newslettern bleibt actionItems leer [].`;
 
   const userContent = `Absender: ${from}\nBetreff: ${subject}\n\nInhalt:\n${cleanedContent}`;
 
@@ -84,7 +99,7 @@ Regeln:
         { role: "system", content: systemPrompt },
         { role: "user", content: userContent },
       ],
-      temperature: 0.2,
+      temperature: 0.1,
       response_format: { type: "json_object" },
     });
 

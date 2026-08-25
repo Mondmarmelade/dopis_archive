@@ -323,12 +323,15 @@ export function Mail({
       return false;
     }
 
-    // Folder newsletter filter (AI detected newsletter or list-unsubscribe)
+    // Folder newsletter filter (AI detected newsletter, werbung or promotions)
     if (selectedFolder === "newsletters") {
-      const isNewsletter =
-        mail.ai?.category?.toLowerCase() === "newsletter" ||
+      const cat = mail.ai?.category?.toLowerCase();
+      const isNewsletterOrPromo =
+        cat === "newsletter" ||
+        cat === "werbung" ||
+        cat === "angebote" ||
         mail.subject?.toLowerCase().includes("newsletter");
-      if (!isNewsletter) return false;
+      if (!isNewsletterOrPromo) return false;
     }
 
     // Search query filter
