@@ -22,6 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AiInsightsCard } from "./AiInsightsCard";
 
 // Configure DOMPurify to automatically open all email links in a new window/tab safely
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -72,6 +73,11 @@ export function MailDisplay({
   onToggleRead,
   onMoveToTrash,
   currentFolder = "inbox",
+  aiAnalysis,
+  aiLoading,
+  aiError,
+  onReanalyze,
+  onToggleActionItem,
 }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -302,6 +308,15 @@ export function MailDisplay({
               {subject}
             </h2>
           </div>
+
+          {/* AI Insights Card (Summary, Action Items, Tags) */}
+          <AiInsightsCard
+            analysis={aiAnalysis}
+            loading={aiLoading}
+            error={aiError}
+            onReanalyze={onReanalyze}
+            onToggleActionItem={onToggleActionItem}
+          />
 
           <Separator />
 

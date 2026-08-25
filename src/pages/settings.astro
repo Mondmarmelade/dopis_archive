@@ -1,0 +1,10 @@
+---
+import MainLayout from "../layouts/MainLayout.astro";
+import { SettingsForm } from "../components/SettingsForm";
+---
+
+<MainLayout title="Einstellungen">
+  <div class="h-full overflow-y-auto bg-background">
+    <SettingsForm client:load />
+  </div>
+</MainLayout>

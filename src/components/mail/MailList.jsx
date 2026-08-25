@@ -44,6 +44,25 @@ function getInitials(name, email) {
   return "M";
 }
 
+function getCategoryColor(category) {
+  switch (category?.toLowerCase()) {
+    case "rechnung":
+    case "finanzen":
+      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20";
+    case "dringend":
+    case "wichtig":
+      return "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20";
+    case "newsletter":
+      return "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20";
+    case "benachrichtigung":
+      return "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20";
+    case "persönlich":
+      return "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
+    default:
+      return "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300 border-zinc-500/20";
+  }
+}
+
 export function MailList({ items, selectedMailId, onSelectMail }) {
   if (!items || items.length === 0) {
     return (
@@ -60,6 +79,8 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
         const isSelected = String(item.id) === String(selectedMailId);
         const domain = getSenderDomain(item.email);
         const initials = getInitials(item.name, item.email);
+        const category = item.ai?.category || item.category;
+        const tags = item.ai?.tags || item.tags || [];
 
         return (
           <button
@@ -67,7 +88,7 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
             type="button"
             onClick={() => onSelectMail(item.id || item.seq)}
             className={cn(
-              "flex flex-col items-start gap-2 rounded-lg border p-3 text-left text-sm transition-all cursor-pointer hover:bg-accent/60",
+              "flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left text-sm transition-all cursor-pointer hover:bg-accent/60",
               isSelected && "bg-muted border-primary/30 shadow-xs",
               !item.read && "font-medium"
             )}
@@ -109,11 +130,27 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
               {item.subject || "(No Subject)"}
             </div>
 
-            {item.envelope?.to && item.envelope.to.length > 0 && (
-              <div className="line-clamp-1 text-[11px] text-muted-foreground">
-                To: {item.envelope.to.map((t) => t.name || t.address).join(", ")}
-              </div>
-            )}
+            {/* AI Category & Tag Badges */}
+            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+              {category && (
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border",
+                    getCategoryColor(category)
+                  )}
+                >
+                  {category}
+                </span>
+              )}
+              {tags.slice(0, 2).map((tag, idx) => (
+                <span
+                  key={idx}
+                  className="inline-flex items-center rounded bg-muted/60 border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
           </button>
         );
       })}

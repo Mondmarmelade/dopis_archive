@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Inbox,
   Send,
@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Newspaper,
   Settings,
+  Sparkles,
 } from "lucide-react";
 
 import {
@@ -27,6 +28,12 @@ import { AccountSwitcher } from "./mail/AccountSwitcher";
 import { Nav } from "./mail/Nav";
 import { MailList } from "./mail/MailList";
 import { MailDisplay } from "./mail/MailDisplay";
+import {
+  getCachedAnalysis,
+  setCachedAnalysis,
+  toggleCachedActionItem,
+  getAiSettings,
+} from "@/lib/aiCache";
 
 export function Mail({
   defaultLayout = [18, 36, 46],
@@ -43,6 +50,77 @@ export function Mail({
   const [activeTab, setActiveTab] = useState("all");
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedMailId, setSelectedMailId] = useState(null);
+
+  // AI State
+  const [aiMap, setAiMap] = useState({});
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const isAnalyzingQueue = useRef(false);
+
+  // Analyze a specific email with the AI API
+  const analyzeEmail = async (mailItem, fullText = "", fullHtml = "", force = false) => {
+    if (!mailItem) return null;
+    const id = mailItem.id || mailItem.seq;
+
+    if (!force) {
+      const cached = getCachedAnalysis(id);
+      if (cached) {
+        setAiMap((prev) => ({ ...prev, [id]: cached }));
+        return cached;
+      }
+    }
+
+    try {
+      const settings = getAiSettings();
+      const res = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: mailItem.subject || "",
+          from: mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
+          text: fullText,
+          html: fullHtml,
+          settings,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`AI API error (${res.status})`);
+      }
+
+      const result = await res.json();
+      setCachedAnalysis(id, result);
+      setAiMap((prev) => ({ ...prev, [id]: result }));
+      return result;
+    } catch (err) {
+      console.warn(`AI analysis failed for email ${id}:`, err.message);
+      throw err;
+    }
+  };
+
+  // Background queue: analyze unanalyzed emails in current mailbox
+  const processUnanalyzedQueue = async (items) => {
+    if (isAnalyzingQueue.current || !items || items.length === 0) return;
+    isAnalyzingQueue.current = true;
+
+    try {
+      // Analyze up to 10 newest unanalyzed emails
+      const unanalyzed = items.filter((m) => {
+        const id = m.id || m.seq;
+        return !getCachedAnalysis(id) && !aiMap[id];
+      }).slice(0, 10);
+
+      for (const item of unanalyzed) {
+        try {
+          await analyzeEmail(item, "", "", false);
+        } catch {
+          // continue with next
+        }
+      }
+    } finally {
+      isAnalyzingQueue.current = false;
+    }
+  };
 
   const fetchEmails = async (isManualRefresh = false, folderToLoad = selectedFolder) => {
     if (isManualRefresh) {
@@ -66,6 +144,17 @@ export function Mail({
       setMails(fetchedMails);
       setAccountEmail(data.account || "");
 
+      // Populate AI map from localStorage cache
+      const initialAiMap = {};
+      fetchedMails.forEach((m) => {
+        const id = m.id || m.seq;
+        const cached = getCachedAnalysis(id);
+        if (cached) {
+          initialAiMap[id] = cached;
+        }
+      });
+      setAiMap(initialAiMap);
+
       // Auto-select first email in newly loaded folder
       if (fetchedMails.length > 0) {
         const first = fetchedMails[0];
@@ -74,6 +163,9 @@ export function Mail({
       } else {
         setSelectedMailId(null);
       }
+
+      // Start background scan for unanalyzed emails
+      processUnanalyzedQueue(fetchedMails);
     } catch (err) {
       setError(err.message || "Failed to load emails");
     } finally {
@@ -85,6 +177,38 @@ export function Mail({
   useEffect(() => {
     fetchEmails(false, selectedFolder);
   }, [selectedFolder]);
+
+  // When selected email changes, check if it needs immediate analysis
+  useEffect(() => {
+    if (!selectedMailId) return;
+
+    const target = mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
+    if (!target) return;
+
+    const cached = getCachedAnalysis(selectedMailId) || aiMap[selectedMailId];
+    if (!cached) {
+      // Trigger live analysis for selected email
+      setAiLoading(true);
+      setAiError(null);
+
+      // First fetch email content to provide full text to AI
+      fetch(`/api/email?seq=${selectedMailId}&folder=${selectedFolder}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((detail) => {
+          return analyzeEmail(target, detail?.text || "", detail?.html || "", false);
+        })
+        .then(() => {
+          setAiLoading(false);
+        })
+        .catch((err) => {
+          setAiError(err.message);
+          setAiLoading(false);
+        });
+    } else {
+      setAiLoading(false);
+      setAiError(null);
+    }
+  }, [selectedMailId]);
 
   const handleSelectFolder = (newFolder) => {
     if (newFolder !== selectedFolder) {
@@ -124,6 +248,33 @@ export function Mail({
     }
   };
 
+  const handleReanalyze = async () => {
+    if (!selectedMailId) return;
+    const target = mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
+    if (!target) return;
+
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      const detailRes = await fetch(`/api/email?seq=${selectedMailId}&folder=${selectedFolder}`);
+      const detail = detailRes.ok ? await detailRes.json() : null;
+      await analyzeEmail(target, detail?.text || "", detail?.html || "", true);
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleToggleActionItem = (taskIndex) => {
+    if (!selectedMailId) return;
+    const updated = toggleCachedActionItem(selectedMailId, taskIndex);
+    if (updated) {
+      setAiMap((prev) => ({ ...prev, [selectedMailId]: updated }));
+    }
+  };
+
   const moveToTrash = async (seq) => {
     if (!seq) return;
 
@@ -156,11 +307,28 @@ export function Mail({
     }
   };
 
+  // Combine mail items with their AI analysis data for rich list rendering
+  const enrichedMails = mails.map((m) => {
+    const id = m.id || m.seq;
+    return {
+      ...m,
+      ai: aiMap[id] || null,
+    };
+  });
+
   // Filter mails based on tab and search query
-  const filteredMails = mails.filter((mail) => {
+  const filteredMails = enrichedMails.filter((mail) => {
     // Tab filter (all vs unread)
     if (activeTab === "unread" && mail.read) {
       return false;
+    }
+
+    // Folder newsletter filter (AI detected newsletter or list-unsubscribe)
+    if (selectedFolder === "newsletters") {
+      const isNewsletter =
+        mail.ai?.category?.toLowerCase() === "newsletter" ||
+        mail.subject?.toLowerCase().includes("newsletter");
+      if (!isNewsletter) return false;
     }
 
     // Search query filter
@@ -169,7 +337,9 @@ export function Mail({
       const matchSubject = mail.subject?.toLowerCase().includes(q);
       const matchName = mail.name?.toLowerCase().includes(q);
       const matchEmail = mail.email?.toLowerCase().includes(q);
-      if (!matchSubject && !matchName && !matchEmail) {
+      const matchCategory = mail.ai?.category?.toLowerCase().includes(q);
+      const matchTags = mail.ai?.tags?.some((t) => t.toLowerCase().includes(q));
+      if (!matchSubject && !matchName && !matchEmail && !matchCategory && !matchTags) {
         return false;
       }
     }
@@ -181,6 +351,7 @@ export function Mail({
   const selectedSummaryMail = mails.find(
     (m) => String(m.id || m.seq) === String(selectedMailId)
   );
+  const currentAiAnalysis = selectedMailId ? aiMap[selectedMailId] || null : null;
 
   const folderTitle =
     selectedFolder === "inbox"
@@ -266,7 +437,9 @@ export function Mail({
                 label: "",
                 icon: Settings,
                 variant: "ghost",
-                onClick: () => {},
+                onClick: () => {
+                  window.location.href = "/settings";
+                },
               },
             ]}
           />
@@ -278,7 +451,7 @@ export function Mail({
         <ResizablePanel defaultSize={defaultLayout[1]} minSize={25} maxSize={45} className="border-r">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
             <div className="flex h-[52px] items-center justify-between px-4 shrink-0">
-              <h1 className="text-base font-bold tracking-tight">
+              <h1 className="text-base font-bold tracking-tight flex items-center gap-1.5">
                 {folderTitle}
               </h1>
               <div className="flex items-center gap-2">
@@ -354,13 +527,18 @@ export function Mail({
 
         <ResizableHandle withHandle />
 
-        {/* Right Column: Mail Detail Display */}
+        {/* Right Column: Mail Detail Display with AI Insights */}
         <ResizablePanel defaultSize={defaultLayout[2]} minSize={30}>
           <MailDisplay
             selectedMailId={selectedMailId}
             summaryMail={selectedSummaryMail}
             isRead={selectedSummaryMail ? selectedSummaryMail.read : false}
             currentFolder={selectedFolder}
+            aiAnalysis={currentAiAnalysis}
+            aiLoading={aiLoading}
+            aiError={aiError}
+            onReanalyze={handleReanalyze}
+            onToggleActionItem={handleToggleActionItem}
             onToggleRead={() => {
               if (selectedSummaryMail) {
                 markMailAsRead(selectedMailId, !selectedSummaryMail.read);
