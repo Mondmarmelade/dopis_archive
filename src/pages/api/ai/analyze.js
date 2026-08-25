@@ -1,4 +1,5 @@
 import { createAiClient } from "../../../utils/aiClient";
+import { anonymizePii } from "../../../utils/aiAnonymizer";
 
 function cleanEmailText(text, html) {
   let raw = text || "";
@@ -34,9 +35,19 @@ export async function POST({ request, cookies }) {
   }
 
   const { subject = "", from = "", text = "", html = "", settings = {} } = body;
-  const cleanedContent = cleanEmailText(text, html);
+  let cleanedContent = cleanEmailText(text, html);
+  let senderInfo = from;
+  let subjectInfo = subject;
 
-  if (!cleanedContent && !subject) {
+  // Apply PII anonymization if enabled (enabled by default)
+  const shouldAnonymize = settings.anonymizePii !== false;
+  if (shouldAnonymize) {
+    cleanedContent = anonymizePii(cleanedContent);
+    senderInfo = anonymizePii(senderInfo);
+    subjectInfo = anonymizePii(subjectInfo);
+  }
+
+  if (!cleanedContent && !subjectInfo) {
     return new Response(
       JSON.stringify({
         summary: ["Leere E-Mail ohne Inhalt."],
@@ -88,7 +99,7 @@ REGELN:
 2. 'tags': 1 bis 3 kurze Stichwörter (z.B. 'Rabatt', 'Finanzen', 'Sicherheit', 'Versand').
 3. 'actionItems': Nur Aufgaben/To-Dos erfassen, die der Empfänger tatsächlich erledigen soll (z.B. "Zahlung veranlassen", "Termin bestätigen"). Bei reiner Werbung oder Newslettern bleibt actionItems leer [].`;
 
-  const userContent = `Absender: ${from}\nBetreff: ${subject}\n\nInhalt:\n${cleanedContent}`;
+  const userContent = `Absender: ${senderInfo}\nBetreff: ${subjectInfo}\n\nInhalt:\n${cleanedContent}`;
 
   try {
     const { client, model } = createAiClient(settings);

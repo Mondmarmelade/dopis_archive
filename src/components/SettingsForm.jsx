@@ -10,6 +10,7 @@ import {
   Trash2,
   RefreshCw,
   Save,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ export function SettingsForm() {
   const [baseUrl, setBaseUrl] = useState("http://localhost:11434/v1");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("llama3.2");
+  const [anonymizePii, setAnonymizePii] = useState(true);
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -30,11 +32,12 @@ export function SettingsForm() {
     if (current.baseUrl) setBaseUrl(current.baseUrl);
     if (current.apiKey) setApiKey(current.apiKey);
     if (current.model) setModel(current.model);
+    if (current.anonymizePii !== undefined) setAnonymizePii(current.anonymizePii);
   }, []);
 
   const handleSave = (e) => {
     if (e) e.preventDefault();
-    saveAiSettings({ baseUrl, apiKey, model });
+    saveAiSettings({ baseUrl, apiKey, model, anonymizePii });
     setSavedMessage(true);
     setTimeout(() => setSavedMessage(false), 3000);
   };
@@ -92,7 +95,7 @@ export function SettingsForm() {
         <div className="flex items-center gap-3">
           <a
             href="/mails"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background hover:bg-accent text-foreground transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background hover:bg-accent text-foreground transition-colors cursor-pointer"
           >
             <ArrowLeft className="h-4 w-4" />
             <span className="sr-only">Zurück zu Mails</span>
@@ -201,17 +204,39 @@ export function SettingsForm() {
               size="sm"
               onClick={handleTestConnection}
               disabled={testing}
-              className="text-xs"
+              className="text-xs cursor-pointer"
             >
               <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${testing ? "animate-spin" : ""}`} />
               {testing ? "Teste Verbindung..." : "Verbindung testen"}
             </Button>
-
-            <Button type="submit" size="sm" className="text-xs">
-              <Save className="mr-1.5 h-3.5 w-3.5" />
-              Einstellungen speichern
-            </Button>
           </div>
+        </div>
+
+        {/* Privacy & PII Redaction Card */}
+        <div className="rounded-xl border bg-card p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              Datenschutz & Anonymisierung
+            </h2>
+          </div>
+
+          <label className="flex items-start gap-3 rounded-lg border p-3.5 cursor-pointer hover:bg-accent/40 transition-colors">
+            <input
+              type="checkbox"
+              checked={anonymizePii}
+              onChange={(e) => setAnonymizePii(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-primary text-primary focus:ring-primary cursor-pointer"
+            />
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-foreground">
+                Persönliche Daten vor dem Senden an die KI automatisch schwärzen (Empfohlen)
+              </p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Entfernt und maskiert E-Mail-Adressen, Telefonnummern, IBANs, Kreditkartennummern, IP-Adressen und Postanschriften aus dem E-Mail-Text und Absender, bevor die Anfrage den KI-Server erreicht.
+              </p>
+            </div>
+          </label>
         </div>
 
         {/* Cache Management */}
@@ -228,10 +253,17 @@ export function SettingsForm() {
             variant="outline"
             size="sm"
             onClick={handleClearCache}
-            className="text-xs text-destructive hover:bg-destructive/10 hover:border-destructive/30"
+            className="text-xs text-destructive hover:bg-destructive/10 hover:border-destructive/30 cursor-pointer"
           >
             <Trash2 className="mr-1.5 h-3.5 w-3.5" />
             KI-Cache leeren
+          </Button>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <Button type="submit" size="default" className="text-xs font-semibold cursor-pointer">
+            <Save className="mr-1.5 h-4 w-4" />
+            Alle Einstellungen speichern
           </Button>
         </div>
       </form>

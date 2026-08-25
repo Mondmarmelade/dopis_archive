@@ -14,18 +14,23 @@ export interface AiSettings {
   baseUrl?: string;
   apiKey?: string;
   model?: string;
+  anonymizePii?: boolean;
 }
 
 const CACHE_PREFIX = "dopis:ai:cache:";
 const SETTINGS_KEY = "dopis:ai:settings";
 
 export function getAiSettings(): AiSettings {
-  if (typeof window === "undefined") return {};
+  if (typeof window === "undefined") return { anonymizePii: true };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (parsed.anonymizePii === undefined) {
+      parsed.anonymizePii = true;
+    }
+    return parsed;
   } catch {
-    return {};
+    return { anonymizePii: true };
   }
 }
 
