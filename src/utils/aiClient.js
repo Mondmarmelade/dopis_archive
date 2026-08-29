@@ -25,6 +25,8 @@ export function createAiClient(overrides = {}) {
   const client = new OpenAI({
     baseURL: config.baseURL,
     apiKey: config.apiKey,
+    maxRetries: 2,
+    timeout: 45000,
     dangerouslyAllowBrowser: false,
   });
 

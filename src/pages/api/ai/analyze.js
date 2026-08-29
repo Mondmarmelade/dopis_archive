@@ -112,16 +112,32 @@ REGELN:
 
   try {
     const { client, model } = createAiClient(settings);
+    let response;
+    const maxRetries = 2;
 
-    const response = await client.chat.completions.create({
-      model: model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-    });
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        response = await client.chat.completions.create({
+          model: model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userContent },
+          ],
+          temperature: 0.1,
+          response_format: { type: "json_object" },
+        });
+        break;
+      } catch (err) {
+        const status = err.status || err.statusCode;
+        const isTransient = status === 503 || status === 429 || status === 502 || status === 504;
+        if (isTransient && attempt < maxRetries) {
+          const delay = (attempt + 1) * 1200;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        throw err;
+      }
+    }
 
     const durationMs = Math.round(performance.now() - startTime);
     let rawOutput = response.choices?.[0]?.message?.content?.trim() || "{}";
@@ -163,11 +179,20 @@ REGELN:
     );
   } catch (error) {
     console.error("AI analysis failed:", error);
+    const status = error.status || error.statusCode || 500;
+    let friendlyMessage = error.message || "Failed to analyze email with AI";
+
+    if (status === 503 || friendlyMessage.includes("503") || friendlyMessage.includes("ServiceUnavailable")) {
+      friendlyMessage = "KI-Endpunkt vorübergehend überlastet (503 Service Unavailable). Bitte in wenigen Sekunden erneut versuchen.";
+    } else if (status === 429 || friendlyMessage.includes("429") || friendlyMessage.includes("RateLimit")) {
+      friendlyMessage = "Rate Limit erreicht (429 Too Many Requests). Bitte kurz warten.";
+    }
+
     return new Response(
       JSON.stringify({
-        error: error.message || "Failed to analyze email with AI",
+        error: friendlyMessage,
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: status >= 400 && status < 600 ? status : 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }

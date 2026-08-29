@@ -24,19 +24,25 @@ export function Nav({ links, isCollapsed }) {
                   onClick={link.onClick}
                   className={cn(
                     buttonVariants({ variant: link.variant, size: "icon" }),
-                    "h-9 w-9",
+                    "relative h-9 w-9 cursor-pointer",
                     link.variant === "default" &&
                       "dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-white"
                   )}
                 >
                   <Icon className="h-4 w-4" />
+                  {link.dot && (
+                    <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                    </span>
+                  )}
                   <span className="sr-only">{link.title}</span>
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right" className="flex items-center gap-4">
                 {link.title}
                 {link.label && (
-                  <span className="ml-auto text-muted-foreground">
+                  <span className="ml-auto text-muted-foreground text-xs">
                     {link.label}
                   </span>
                 )}
@@ -51,11 +57,11 @@ export function Nav({ links, isCollapsed }) {
                 buttonVariants({ variant: link.variant, size: "sm" }),
                 link.variant === "default" &&
                   "dark:bg-muted dark:text-white dark:hover:bg-muted dark:hover:text-white",
-                "justify-start w-full"
+                "justify-start w-full cursor-pointer"
               )}
             >
-              <Icon className="mr-2 h-4 w-4" />
-              {link.title}
+              <Icon className="mr-2 h-4 w-4 shrink-0" />
+              <span className="truncate">{link.title}</span>
               {link.label && (
                 <span
                   className={cn(

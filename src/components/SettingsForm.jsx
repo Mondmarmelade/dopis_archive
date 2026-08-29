@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { getAiSettings, saveAiSettings } from "@/lib/aiCache";
+import { aiQueue } from "@/lib/aiQueue";
 
 export function SettingsForm({ onBack }) {
   const [baseUrl, setBaseUrl] = useState("http://localhost:11434/v1");
@@ -26,6 +27,7 @@ export function SettingsForm({ onBack }) {
   const [anonymizePii, setAnonymizePii] = useState(true);
   const [developerMode, setDeveloperMode] = useState(false);
   const [logoDevToken, setLogoDevToken] = useState("");
+  const [autoQueue, setAutoQueue] = useState(false);
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -39,6 +41,7 @@ export function SettingsForm({ onBack }) {
     if (current.anonymizePii !== undefined) setAnonymizePii(current.anonymizePii);
     if (current.developerMode !== undefined) setDeveloperMode(current.developerMode);
     if (current.logoDevToken) setLogoDevToken(current.logoDevToken);
+    setAutoQueue(aiQueue.getState().isAutoQueueEnabled);
   }, []);
 
   const handleSave = (e) => {
@@ -51,6 +54,7 @@ export function SettingsForm({ onBack }) {
       developerMode,
       logoDevToken,
     });
+    aiQueue.setAutoQueueEnabled(autoQueue);
     setSavedMessage(true);
     setTimeout(() => setSavedMessage(false), 3000);
   };
@@ -271,6 +275,33 @@ export function SettingsForm({ onBack }) {
               Logo.dev ist der offizielle Nachfolger der Clearbit Logo API für gestochen scharfe Unternehmenslogos in deiner E-Mail-Liste.
             </p>
           </div>
+        </div>
+
+        {/* AI Background Processing & Queue Card */}
+        <div className="rounded-xl border bg-card p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Automatische Hintergrund-Warteschlange
+            </h2>
+          </div>
+
+          <label className="flex items-start gap-3 rounded-lg border p-3.5 cursor-pointer hover:bg-accent/40 transition-colors">
+            <input
+              type="checkbox"
+              checked={autoQueue}
+              onChange={(e) => setAutoQueue(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-primary text-primary focus:ring-primary cursor-pointer"
+            />
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-foreground">
+                Ungelesene E-Mails automatisch im Leerlauf analysieren (Selektive Automatik)
+              </p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Reiht neu eintreffende und ungelesene E-Mails ressourcenschonend im Hintergrund in die Warteschlange ein. Bestehende und gelesene E-Mails können jederzeit manuell im Dashboard &quot;KI-Aktivität&quot; analysiert werden.
+              </p>
+            </div>
+          </label>
         </div>
 
         {/* Privacy & PII Redaction Card */}

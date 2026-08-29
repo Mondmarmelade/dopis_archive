@@ -14,6 +14,7 @@ import {
   MailCheck,
   Loader2,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -134,9 +135,9 @@ export function MailDisplay({
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
           <MailIcon className="h-6 w-6 text-muted-foreground/60" />
         </div>
-        <h3 className="mt-4 text-sm font-semibold text-foreground">No message selected</h3>
+        <h3 className="mt-4 text-sm font-semibold text-foreground">Keine E-Mail ausgewählt</h3>
         <p className="mt-1 text-xs text-muted-foreground max-w-xs">
-          Select an email from your mailbox on the left to read its full content and view details.
+          Wähle links eine E-Mail aus, um ihren Inhalt und Details anzuzeigen.
         </p>
       </div>
     );
@@ -144,7 +145,7 @@ export function MailDisplay({
 
   const senderEmail = detail?.from?.address || summaryMail?.email || "";
   const senderName = detail?.from?.name || summaryMail?.name || senderEmail;
-  const subject = detail?.subject || summaryMail?.subject || "(No Subject)";
+  const subject = detail?.subject || summaryMail?.subject || "(Kein Betreff)";
   const dateStr = detail?.date || summaryMail?.date;
   const isTrashFolder = currentFolder === "trash";
 
@@ -157,20 +158,20 @@ export function MailDisplay({
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <Archive className="h-4 w-4" />
-                <span className="sr-only">Archive</span>
+                <span className="sr-only">Archivieren</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Archive</TooltipContent>
+            <TooltipContent>Archivieren</TooltipContent>
           </Tooltip>
 
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <ArchiveX className="h-4 w-4" />
-                <span className="sr-only">Move to junk</span>
+                <span className="sr-only">In Spam verschieben</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Move to junk</TooltipContent>
+            <TooltipContent>In Spam verschieben</TooltipContent>
           </Tooltip>
 
           {/* Move to Trash / Delete */}
@@ -184,12 +185,12 @@ export function MailDisplay({
               >
                 <Trash2 className="h-4 w-4" />
                 <span className="sr-only">
-                  {isTrashFolder ? "Delete permanently" : "Move to trash"}
+                  {isTrashFolder ? "Endgültig löschen" : "In den Papierkorb"}
                 </span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {isTrashFolder ? "Delete permanently" : "Move to trash"}
+              {isTrashFolder ? "Endgültig löschen" : "In den Papierkorb"}
             </TooltipContent>
           </Tooltip>
 
@@ -210,45 +211,59 @@ export function MailDisplay({
                   <MailCheck className="h-4 w-4 text-blue-600" />
                 )}
                 <span className="sr-only">
-                  {isRead ? "Mark as unread" : "Mark as read"}
+                  {isRead ? "Als ungelesen markieren" : "Als gelesen markieren"}
                 </span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {isRead ? "Mark as unread" : "Mark as read"}
+              {isRead ? "Als ungelesen markieren" : "Als gelesen markieren"}
             </TooltipContent>
           </Tooltip>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          {/* On-demand AI Analysis button for this email */}
+          {!aiAnalysis && !aiLoading && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onReanalyze}
+              className="h-8 gap-1.5 text-xs text-foreground hover:text-primary hover:border-primary/40 cursor-pointer mr-1 shadow-2xs"
+              title="Diese E-Mail mit KI analysieren"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              <span className="hidden sm:inline font-medium">Mit KI analysieren</span>
+            </Button>
+          )}
+
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <Reply className="h-4 w-4" />
-                <span className="sr-only">Reply</span>
+                <span className="sr-only">Antworten</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Reply</TooltipContent>
+            <TooltipContent>Antworten</TooltipContent>
           </Tooltip>
 
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <ReplyAll className="h-4 w-4" />
-                <span className="sr-only">Reply all</span>
+                <span className="sr-only">Allen antworten</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Reply all</TooltipContent>
+            <TooltipContent>Allen antworten</TooltipContent>
           </Tooltip>
 
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
                 <Forward className="h-4 w-4" />
-                <span className="sr-only">Forward</span>
+                <span className="sr-only">Weiterleiten</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Forward</TooltipContent>
+            <TooltipContent>Weiterleiten</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -259,11 +274,11 @@ export function MailDisplay({
       {loading ? (
         <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          <p className="mt-3 text-xs">Loading email content...</p>
+          <p className="mt-3 text-xs">E-Mail-Inhalt wird geladen...</p>
         </div>
       ) : error ? (
         <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-destructive">
-          <p className="text-sm font-medium">Failed to load message</p>
+          <p className="text-sm font-medium">E-Mail konnte nicht geladen werden</p>
           <p className="mt-1 text-xs text-muted-foreground">{error}</p>
         </div>
       ) : (
@@ -292,7 +307,7 @@ export function MailDisplay({
               </div>
               {detail?.to && detail.to.length > 0 && (
                 <div className="text-xs text-muted-foreground/80 truncate">
-                  to {detail.to.map((t) => t.name || t.address).join(", ")}
+                  an {detail.to.map((t) => t.name || t.address).join(", ")}
                 </div>
               )}
             </div>
@@ -323,14 +338,14 @@ export function MailDisplay({
             <div className="bg-muted/40 px-5 py-2.5 border-b flex flex-wrap gap-2 items-center text-xs">
               <span className="flex items-center gap-1 font-medium text-muted-foreground">
                 <Paperclip className="h-3.5 w-3.5" />
-                Attachments ({detail.attachments.length}):
+                Anhänge ({detail.attachments.length}):
               </span>
               {detail.attachments.map((att, idx) => (
                 <span
                   key={idx}
                   className="inline-flex items-center gap-1 rounded bg-background border px-2 py-0.5 text-xs text-foreground font-mono"
                 >
-                  {att.filename || `attachment-${idx + 1}`}
+                  {att.filename || `Anhang-${idx + 1}`}
                 </span>
               ))}
             </div>
@@ -350,7 +365,7 @@ export function MailDisplay({
                 {detail.text}
               </pre>
             ) : (
-              <p className="italic text-muted-foreground text-xs">This email has no text content.</p>
+              <p className="italic text-muted-foreground text-xs">Diese E-Mail hat keinen Textinhalt.</p>
             )}
           </div>
         </div>

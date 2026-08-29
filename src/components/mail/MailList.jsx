@@ -2,6 +2,8 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { SenderAvatar } from "./SenderAvatar";
+import { Sparkles, Clock, AlertCircle } from "lucide-react";
+import { useAiQueue } from "@/lib/aiQueue";
 
 function formatDate(dateString) {
   if (!dateString) return "";
@@ -54,6 +56,8 @@ function getCategoryColor(category) {
 }
 
 export function MailList({ items, selectedMailId, onSelectMail }) {
+  const { currentItem, queue, activityLog } = useAiQueue();
+
   if (!items || items.length === 0) {
     return (
       <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-muted-foreground">
@@ -66,22 +70,29 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
   return (
     <div className="flex flex-col gap-2 p-4 pt-0">
       {items.map((item) => {
-        const isSelected = String(item.id) === String(selectedMailId);
+        const itemId = item.id || item.seq;
+        const isSelected = String(itemId) === String(selectedMailId);
         const category = item.ai?.category || item.category;
         const tags = item.ai?.tags || item.tags || [];
 
+        // Check queue statuses
+        const isCurrentlyAnalyzing = currentItem && String(currentItem.id) === String(itemId);
+        const isQueued = queue.some((q) => String(q.id) === String(itemId));
+        const lastActivity = activityLog.find((a) => String(a.mailId) === String(itemId));
+        const hasFailed = lastActivity && lastActivity.status === "error" && !category;
+
         return (
           <button
-            key={item.id || item.seq}
+            key={itemId}
             type="button"
-            onClick={() => onSelectMail(item.id || item.seq)}
+            onClick={() => onSelectMail(itemId)}
             className={cn(
               "flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition-all cursor-pointer hover:bg-accent/60",
               isSelected && "bg-muted border-primary/30 shadow-xs",
               !item.read && "font-medium"
             )}
           >
-            <SenderAvatar email={item.email} size="md" className="mt-0.5" />
+            <SenderAvatar email={item.email} size="md" className="mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0 flex flex-col gap-1">
               <div className="flex w-full items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 overflow-hidden">
@@ -106,9 +117,24 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
                 {item.subject || "(No Subject)"}
               </div>
 
-              {/* AI Category & Tag Badges */}
+              {/* Status and Badges */}
               <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                {category && (
+                {isCurrentlyAnalyzing ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-primary/10 border border-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary animate-pulse">
+                    <Sparkles className="h-2.5 w-2.5 animate-spin" />
+                    KI analysiert...
+                  </span>
+                ) : isQueued ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-muted/70 border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    <Clock className="h-2.5 w-2.5" />
+                    Warteschlange
+                  </span>
+                ) : hasFailed ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-destructive/10 border border-destructive/20 px-1.5 py-0.5 text-[10px] text-destructive">
+                    <AlertCircle className="h-2.5 w-2.5" />
+                    KI-Fehler
+                  </span>
+                ) : category ? (
                   <span
                     className={cn(
                       "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border",
@@ -117,7 +143,8 @@ export function MailList({ items, selectedMailId, onSelectMail }) {
                   >
                     {category}
                   </span>
-                )}
+                ) : null}
+
                 {tags.slice(0, 2).map((tag, idx) => (
                   <span
                     key={idx}

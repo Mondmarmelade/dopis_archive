@@ -29,12 +29,14 @@ import { Nav } from "./mail/Nav";
 import { MailList } from "./mail/MailList";
 import { MailDisplay } from "./mail/MailDisplay";
 import { SettingsForm } from "./SettingsForm";
+import { AiActivityView } from "./mail/AiActivityView";
 import {
   getCachedAnalysis,
   setCachedAnalysis,
   toggleCachedActionItem,
   getAiSettings,
 } from "@/lib/aiCache";
+import { aiQueue, useAiQueue } from "@/lib/aiQueue";
 
 export function Mail({
   defaultLayout = [18, 36, 46],
@@ -43,7 +45,7 @@ export function Mail({
   defaultView = "mails",
 }) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
-  const [currentView, setCurrentView] = useState(defaultView); // "mails" | "settings"
+  const [currentView, setCurrentView] = useState(defaultView); // "mails" | "settings" | "ai-activity"
   const [mails, setMails] = useState([]);
   const [accountEmail, setAccountEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -54,6 +56,9 @@ export function Mail({
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedMailId, setSelectedMailId] = useState(null);
 
+  // Hook for AI Queue updates
+  const { queue, currentItem } = useAiQueue();
+
   // In-Memory Stale-While-Revalidate Folder Cache
   const folderCacheRef = useRef({});
 
@@ -61,7 +66,6 @@ export function Mail({
   const [aiMap, setAiMap] = useState({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
-  const isAnalyzingQueue = useRef(false);
 
   // Analyze a specific email with the AI API
   const analyzeEmail = useCallback(async (mailItem, fullText = "", fullHtml = "", force = false) => {
@@ -76,6 +80,7 @@ export function Mail({
       }
     }
 
+    const startTime = performance.now();
     try {
       const settings = getAiSettings();
       const res = await fetch("/api/ai/analyze", {
@@ -91,49 +96,36 @@ export function Mail({
       });
 
       if (!res.ok) {
-        throw new Error(`AI API error (${res.status})`);
+        const errorJson = await res.json().catch(() => ({}));
+        throw new Error(errorJson.error || `AI API Fehler (${res.status})`);
       }
 
       const result = await res.json();
+      const durationMs = Math.round(performance.now() - startTime);
       setCachedAnalysis(id, result);
       setAiMap((prev) => ({ ...prev, [id]: result }));
+      aiQueue.logExternalAnalysis(
+        id,
+        mailItem.subject || "",
+        mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
+        result,
+        durationMs
+      );
       return result;
     } catch (err) {
+      const durationMs = Math.round(performance.now() - startTime);
+      aiQueue.logExternalAnalysis(
+        id,
+        mailItem.subject || "",
+        mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
+        null,
+        durationMs,
+        err.message
+      );
       console.warn(`AI analysis failed for email ${id}:`, err.message);
       throw err;
     }
   }, []);
-
-  // Idle Background Queue for unanalyzed emails (never blocks UI)
-  const processUnanalyzedQueue = useCallback((items) => {
-    if (isAnalyzingQueue.current || !items || items.length === 0) return;
-
-    const runQueue = async () => {
-      isAnalyzingQueue.current = true;
-      try {
-        const unanalyzed = items.filter((m) => {
-          const id = m.id || m.seq;
-          return !getCachedAnalysis(id) && !aiMap[id];
-        }).slice(0, 8);
-
-        for (const item of unanalyzed) {
-          try {
-            await analyzeEmail(item, "", "", false);
-          } catch {
-            // continue
-          }
-        }
-      } finally {
-        isAnalyzingQueue.current = false;
-      }
-    };
-
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      window.requestIdleCallback(() => runQueue(), { timeout: 3000 });
-    } else {
-      setTimeout(runQueue, 500);
-    }
-  }, [aiMap, analyzeEmail]);
 
   // Fetch emails with Stale-While-Revalidate caching pattern
   const fetchEmails = useCallback(async (isManualRefresh = false, folderToLoad = selectedFolder) => {
@@ -192,8 +184,10 @@ export function Mail({
         setSelectedMailId(null);
       }
 
-      // Schedule background scan in idle time
-      processUnanalyzedQueue(fetchedMails);
+      // Schedule background scan in idle time if auto-queue is enabled
+      if (aiQueue.getState().isAutoQueueEnabled) {
+        aiQueue.enqueueEmails(fetchedMails, { onlyUnread: true, folder: folderToLoad });
+      }
     } catch (err) {
       if (!isCached) {
         setError(err.message || "Failed to load emails");
@@ -202,7 +196,7 @@ export function Mail({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedFolder, processUnanalyzedQueue]);
+  }, [selectedFolder]);
 
   // Instant folder switching with SWR Cache
   const handleSelectFolder = useCallback((newFolder) => {
@@ -225,35 +219,17 @@ export function Mail({
     fetchEmails(false, selectedFolder);
   }, [selectedFolder, fetchEmails]);
 
-  // Immediate analysis for selected email
+  // Update AI insights for selected email (loads from cache if available without auto-analyzing)
   useEffect(() => {
-    if (!selectedMailId || currentView !== "mails") return;
+    if (!selectedMailId) return;
 
-    const target = mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
-    if (!target) return;
-
-    const cached = getCachedAnalysis(selectedMailId) || aiMap[selectedMailId];
-    if (!cached) {
-      setAiLoading(true);
-      setAiError(null);
-
-      fetch(`/api/email?seq=${selectedMailId}&folder=${selectedFolder}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((detail) => {
-          return analyzeEmail(target, detail?.text || "", detail?.html || "", false);
-        })
-        .then(() => {
-          setAiLoading(false);
-        })
-        .catch((err) => {
-          setAiError(err.message);
-          setAiLoading(false);
-        });
-    } else {
-      setAiLoading(false);
-      setAiError(null);
+    const cached = getCachedAnalysis(selectedMailId);
+    if (cached) {
+      setAiMap((prev) => ({ ...prev, [selectedMailId]: cached }));
     }
-  }, [selectedMailId, currentView, selectedFolder, mails, aiMap, analyzeEmail]);
+    setAiLoading(false);
+    setAiError(null);
+  }, [selectedMailId]);
 
   const markMailAsRead = useCallback(async (seq, isRead) => {
     if (!seq) return;
@@ -389,6 +365,7 @@ export function Mail({
   }, [enrichedMails, activeTab, selectedFolder, searchQuery]);
 
   const unreadCount = useMemo(() => mails.filter((m) => !m.read).length, [mails]);
+
   const selectedSummaryMail = useMemo(() => {
     return mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
   }, [mails, selectedMailId]);
@@ -475,6 +452,16 @@ export function Mail({
             isCollapsed={isCollapsed}
             links={[
               {
+                title: "KI-Aktivität",
+                label: queue.length > 0 || currentItem ? `${queue.length + (currentItem ? 1 : 0)} aktiv` : "",
+                icon: Sparkles,
+                variant: currentView === "ai-activity" ? "default" : "ghost",
+                dot: Boolean(currentItem || queue.length > 0),
+                onClick: () => {
+                  setCurrentView("ai-activity");
+                },
+              },
+              {
                 title: "Settings",
                 label: "",
                 icon: Settings,
@@ -489,11 +476,21 @@ export function Mail({
 
         <ResizableHandle withHandle />
 
-        {/* Main Content Area: Switches between Mails View and Settings View */}
+        {/* Main Content Area: Switches between Mails View, Settings View, and AI Activity View */}
         {currentView === "settings" ? (
           <ResizablePanel defaultSize={defaultLayout[1] + defaultLayout[2]} minSize={50} className="bg-background">
             <div className="h-full overflow-y-auto">
               <SettingsForm onBack={() => setCurrentView("mails")} />
+            </div>
+          </ResizablePanel>
+        ) : currentView === "ai-activity" ? (
+          <ResizablePanel defaultSize={defaultLayout[1] + defaultLayout[2]} minSize={50} className="bg-background">
+            <div className="h-full overflow-y-auto">
+              <AiActivityView
+                currentFolder={selectedFolder}
+                folderMails={mails}
+                onBack={() => setCurrentView("mails")}
+              />
             </div>
           </ResizablePanel>
         ) : (
@@ -586,7 +583,7 @@ export function Mail({
                 isRead={selectedSummaryMail ? selectedSummaryMail.read : false}
                 currentFolder={selectedFolder}
                 aiAnalysis={currentAiAnalysis}
-                aiLoading={aiLoading}
+                aiLoading={aiLoading || Boolean(currentItem && String(currentItem.id) === String(selectedMailId))}
                 aiError={aiError}
                 onReanalyze={handleReanalyze}
                 onToggleActionItem={handleToggleActionItem}

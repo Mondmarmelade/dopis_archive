@@ -13,9 +13,8 @@ import {
   Copy,
   Check,
   Cpu,
-  ShieldAlert,
+  ShieldCheck,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getAiSettings } from "@/lib/aiCache";
@@ -24,7 +23,7 @@ function getCategoryColor(category) {
   switch (category?.toLowerCase()) {
     case "spam":
     case "phishing":
-      return "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20";
+      return "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20";
     case "werbung":
     case "angebote":
       return "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
@@ -33,7 +32,7 @@ function getCategoryColor(category) {
       return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20";
     case "dringend":
     case "wichtig":
-      return "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20";
+      return "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20";
     case "newsletter":
       return "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20";
     case "benachrichtigung":
@@ -43,7 +42,7 @@ function getCategoryColor(category) {
     case "update":
       return "bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/20";
     default:
-      return "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300 border-zinc-500/20";
+      return "bg-muted text-muted-foreground border-border";
   }
 }
 
@@ -76,9 +75,9 @@ export function AiInsightsCard({
 
   if (loading) {
     return (
-      <div className="mx-5 my-4 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm animate-pulse">
+      <div className="mx-4 my-3 rounded-lg border bg-card p-3 shadow-2xs text-xs">
         <div className="flex items-center gap-2 text-primary font-medium">
-          <Sparkles className="h-4 w-4 animate-spin" />
+          <Sparkles className="h-3.5 w-3.5 animate-spin" />
           <span>KI analysiert E-Mail (Zusammenfassung, Kategorie & To-Dos)...</span>
         </div>
       </div>
@@ -87,17 +86,17 @@ export function AiInsightsCard({
 
   if (error) {
     return (
-      <div className="mx-5 my-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs">
-        <div className="flex items-center justify-between">
+      <div className="mx-4 my-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-destructive font-medium">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="h-4 w-4 shrink-0" />
             <span>KI-Analyse fehlgeschlagen: {error}</span>
           </div>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={onReanalyze}
-            className="h-7 text-xs text-destructive hover:bg-destructive/10 cursor-pointer"
+            className="h-7 text-xs text-destructive hover:bg-destructive/10 border-destructive/30 cursor-pointer shrink-0"
           >
             <RefreshCw className="mr-1 h-3 w-3" />
             Erneut versuchen
@@ -115,21 +114,19 @@ export function AiInsightsCard({
   const hasActionItems = actionItems.length > 0;
 
   return (
-    <div className="mx-5 my-4 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 via-background to-primary/5 p-4 shadow-xs">
+    <div className="mx-4 my-3 rounded-lg border bg-card p-3.5 shadow-2xs text-xs space-y-2.5">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Sparkles className="h-3.5 w-3.5" />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1.5 font-semibold text-foreground mr-1">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <span>KI-Analyse</span>
           </div>
-          <span className="text-xs font-bold uppercase tracking-wider text-primary">
-            AI Insights
-          </span>
 
           {category && (
             <span
               className={cn(
-                "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold",
+                "inline-flex items-center rounded border px-1.5 py-0.2 text-[10px] font-medium",
                 getCategoryColor(category)
               )}
             >
@@ -140,26 +137,26 @@ export function AiInsightsCard({
           {tags.map((tag, idx) => (
             <span
               key={idx}
-              className="inline-flex items-center gap-1 rounded-full bg-muted border px-2 py-0.5 text-[11px] text-muted-foreground"
+              className="inline-flex items-center gap-1 rounded bg-muted border px-1.5 py-0.2 text-[10px] text-muted-foreground"
             >
-              <Tag className="h-2.5 w-2.5" />
+              <Tag className="h-2 w-2" />
               {tag}
             </span>
           ))}
         </div>
 
-        <div className="flex items-center gap-1">
-          {/* Developer Inspector Toggle Button */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Developer Inspector Toggle */}
           {devMode && (
             <Button
               variant={showInspector ? "secondary" : "ghost"}
               size="sm"
               onClick={() => setShowInspector(!showInspector)}
               title="Entwickler-Inspektor umschalten"
-              className="h-7 text-[11px] px-2 gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              className="h-6.5 text-[11px] px-2 gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
             >
-              <Code2 className="h-3.5 w-3.5 text-primary" />
-              <span>Dev Inspector</span>
+              <Code2 className="h-3 w-3 text-primary" />
+              <span>Inspektor</span>
             </Button>
           )}
 
@@ -168,41 +165,42 @@ export function AiInsightsCard({
             size="icon"
             onClick={onReanalyze}
             title="KI-Analyse neu durchführen"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+            className="h-6.5 w-6.5 text-muted-foreground hover:text-foreground cursor-pointer"
           >
             <RefreshCw className="h-3 w-3" />
             <span className="sr-only">Neu analysieren</span>
           </Button>
+
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setCollapsed(!collapsed)}
             title={collapsed ? "Details ausklappen" : "Details einklappen"}
-            className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+            className="h-6.5 w-6.5 text-muted-foreground hover:text-foreground cursor-pointer"
           >
             {collapsed ? (
               <ChevronDown className="h-3.5 w-3.5" />
             ) : (
               <ChevronUp className="h-3.5 w-3.5" />
             )}
-            <span className="sr-only">Toggle collapse</span>
+            <span className="sr-only">Umschalten</span>
           </Button>
         </div>
       </div>
 
       {/* Body content */}
       {!collapsed && (
-        <div className="mt-3.5 space-y-3 pt-2 border-t border-primary/10">
+        <div className="space-y-3 pt-2 border-t border-border">
           {/* Summary */}
           {summary.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-                Kernpunkte (TL;DR)
+              <p className="text-[11px] font-medium text-muted-foreground mb-1">
+                Zusammenfassung
               </p>
-              <ul className="list-disc list-inside space-y-1 text-xs text-foreground leading-relaxed">
+              <ul className="space-y-1 text-xs text-foreground/90 leading-relaxed list-disc list-inside marker:text-primary">
                 {summary.map((item, idx) => (
-                  <li key={idx} className="marker:text-primary">
-                    <span className="text-foreground/90">{item}</span>
+                  <li key={idx}>
+                    <span>{item}</span>
                   </li>
                 ))}
               </ul>
@@ -211,21 +209,21 @@ export function AiInsightsCard({
 
           {/* Action Items */}
           {hasActionItems && (
-            <div className="pt-2 border-t border-primary/10">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
+            <div className="pt-2 border-t border-border">
+              <p className="text-[11px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
                 <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                Handlungsaufforderungen / To-Dos
+                Aufgaben & Handlungsbedarf
               </p>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {actionItems.map((action, idx) => (
                   <div
                     key={idx}
                     onClick={() => onToggleActionItem && onToggleActionItem(idx)}
                     className={cn(
-                      "flex items-start gap-2 rounded-lg border p-2 text-xs transition-colors cursor-pointer hover:bg-accent/50",
+                      "flex items-start gap-2 rounded-md border p-2 text-xs transition-colors cursor-pointer",
                       action.completed
-                        ? "bg-muted/40 text-muted-foreground line-through border-transparent"
-                        : "bg-background border-border text-foreground"
+                        ? "bg-muted/30 text-muted-foreground line-through border-transparent"
+                        : "bg-muted/15 border-border hover:bg-muted/40 text-foreground"
                     )}
                   >
                     <button
@@ -240,7 +238,7 @@ export function AiInsightsCard({
                     </button>
                     <span className="flex-1 font-medium">{action.task}</span>
                     {action.due && (
-                      <span className="inline-flex items-center gap-1 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground font-mono">
+                      <span className="inline-flex items-center gap-1 shrink-0 rounded bg-muted px-1.5 py-0.2 text-[10px] text-muted-foreground font-mono">
                         <Clock className="h-2.5 w-2.5" />
                         {action.due}
                       </span>
@@ -253,69 +251,65 @@ export function AiInsightsCard({
 
           {/* Developer Inspector Section */}
           {devMode && showInspector && (
-            <div className="mt-4 rounded-lg border border-border/80 bg-zinc-950 text-zinc-100 p-3.5 text-xs font-mono shadow-inner space-y-3">
+            <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950 text-zinc-200 p-3 text-xs font-mono space-y-2.5 shadow-2xs">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-2">
-                <div className="flex items-center gap-2">
-                  <Code2 className="h-4 w-4 text-emerald-400" />
-                  <span className="font-semibold text-[11px] text-emerald-400">
-                    Developer Mode Telemetrie
-                  </span>
+                <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-[11px]">
+                  <Code2 className="h-3.5 w-3.5" />
+                  <span>Entwickler-Telemetrie</span>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleCopyDebug(
-                        inspectorTab === "raw"
-                          ? _debug?.rawOutput || analysis
-                          : inspectorTab === "prompt"
-                          ? _debug?.anonymizedInput
-                          : analysis
-                      )
-                    }
-                    className="inline-flex items-center gap-1 rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-300 hover:bg-zinc-700 cursor-pointer transition-colors"
-                  >
-                    {copied ? (
-                      <Check className="h-3 w-3 text-emerald-400" />
-                    ) : (
-                      <Copy className="h-3 w-3" />
-                    )}
-                    <span>{copied ? "Kopiert!" : "Kopieren"}</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopyDebug(
+                      inspectorTab === "raw"
+                        ? _debug?.rawOutput || analysis
+                        : inspectorTab === "prompt"
+                        ? _debug?.anonymizedInput
+                        : analysis
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-700 cursor-pointer transition-colors"
+                >
+                  {copied ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  <span>{copied ? "Kopiert!" : "Kopieren"}</span>
+                </button>
               </div>
 
               {/* Telemetry Chips */}
-              <div className="flex flex-wrap gap-2 text-[11px]">
+              <div className="flex flex-wrap gap-1.5 text-[10px]">
                 {_debug?.durationMs !== undefined && (
-                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-2 py-0.5 text-zinc-300">
-                    <Clock className="h-3 w-3 text-amber-400" />
+                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 text-zinc-300">
+                    <Clock className="h-2.5 w-2.5 text-amber-400" />
                     {_debug.durationMs} ms
                   </span>
                 )}
 
                 {_debug?.model && (
-                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-2 py-0.5 text-zinc-300">
-                    <Cpu className="h-3 w-3 text-blue-400" />
+                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 text-zinc-300">
+                    <Cpu className="h-2.5 w-2.5 text-blue-400" />
                     {_debug.model}
                   </span>
                 )}
 
                 {_debug?.promptTokens !== undefined && (
-                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-2 py-0.5 text-zinc-300">
+                  <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 text-zinc-300">
                     Tokens: {_debug.promptTokens} in / {_debug.completionTokens} out
                   </span>
                 )}
 
-                <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-2 py-0.5 text-emerald-400">
-                  <ShieldAlert className="h-3 w-3" />
-                  PII-Filter aktiv
+                <span className="inline-flex items-center gap-1 rounded bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 text-emerald-400">
+                  <ShieldCheck className="h-2.5 w-2.5" />
+                  PII-Schutz aktiv
                 </span>
               </div>
 
-              {/* Inspector Sub-Tabs */}
-              <div className="flex gap-1 border-b border-zinc-800 pb-1.5 text-[11px]">
+              {/* Sub-Tabs */}
+              <div className="flex gap-1 border-b border-zinc-800 pb-1 text-[10px]">
                 <button
                   type="button"
                   onClick={() => setInspectorTab("raw")}
@@ -326,7 +320,7 @@ export function AiInsightsCard({
                       : "text-zinc-400 hover:text-zinc-200"
                   )}
                 >
-                  Raw LLM JSON
+                  Rohdaten (JSON)
                 </button>
                 <button
                   type="button"
@@ -350,12 +344,12 @@ export function AiInsightsCard({
                       : "text-zinc-400 hover:text-zinc-200"
                   )}
                 >
-                  Vollständiges Objekt
+                  Gesamte Analyse
                 </button>
               </div>
 
               {/* Code viewer */}
-              <div className="max-h-60 overflow-y-auto rounded bg-zinc-900/80 p-2.5 text-[11px] leading-relaxed">
+              <div className="max-h-52 overflow-y-auto rounded bg-zinc-900/90 p-2 text-[10px] leading-relaxed">
                 {inspectorTab === "raw" ? (
                   <pre className="whitespace-pre-wrap break-all text-emerald-300">
                     {_debug?.rawOutput || JSON.stringify(analysis, null, 2)}
