@@ -57,10 +57,10 @@ if (Astro.request.method === "POST") {
 }
 ---
 
-<UnauthLayout title="Login">
+<UnauthLayout title="Anmelden">
   <main>
     <Icon class="logo" name="logo" />
-    <p class="headline">Enter IMAP Credentials:</p>
+    <p class="headline">IMAP-Zugangsdaten eingeben</p>
 
     {
       errorMessage && (
@@ -72,7 +72,7 @@ if (Astro.request.method === "POST") {
 
     <form id="imap-form" method="POST" action="/login">
       <div>
-        <label for="user">Username / E-Mail:</label>
+        <label for="user">Benutzername / E-Mail:</label>
         <input
           type="email"
           id="user"
@@ -83,7 +83,7 @@ if (Astro.request.method === "POST") {
         />
       </div>
       <div>
-        <label for="pass">Password:</label>
+        <label for="pass">Passwort:</label>
         <input
           type="password"
           id="pass"
@@ -93,7 +93,7 @@ if (Astro.request.method === "POST") {
         />
       </div>
       <div>
-        <label for="host">Host:</label>
+        <label for="host">IMAP-Server (Host):</label>
         <input
           type="text"
           id="host"
@@ -112,7 +112,7 @@ if (Astro.request.method === "POST") {
           required
         />
       </div>
-      <button type="submit">Connect to Mailbox</button>
+      <button type="submit">Mit Postfach verbinden</button>
     </form>
   </main>
 </UnauthLayout>
