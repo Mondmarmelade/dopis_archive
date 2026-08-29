@@ -69,7 +69,7 @@ export async function POST({ request, cookies }) {
   }
 
   const systemPrompt = `Du bist ein hochentwickelter E-Mail-Klassifizierungs- und Analyse-Assistent für den E-Mail-Client 'Dopis'.
-Deine Aufgabe ist es, die E-Mail präzise zu kategorisieren, zusammenzufassen und etwaige Handlungsaufforderungen zu extrahieren.
+Deine Aufgabe ist es, die E-Mail präzise zu kategorisieren, zusammenzufassen, etwaige Handlungsaufforderungen zu extrahieren und Bestell-/Sendungsinformationen für das smarte Paket- und E-Commerce-Tracking zu erfassen.
 
 Antworte IMMER und AUSSCHLIESSLICH mit einem validen JSON-Objekt im folgenden Format (kein Markdown, keine Backticks):
 {
@@ -84,7 +84,17 @@ Antworte IMMER und AUSSCHLIESSLICH mit einem validen JSON-Objekt im folgenden Fo
       "task": "Konkrete To-Do oder Handlungsaufforderung",
       "due": "Frist/Datum oder null"
     }
-  ]
+  ],
+  "orderInfo": {
+    "isOrder": true,
+    "merchant": "Händlername (z. B. Amazon, Otto, Zalando, eBay, Apple, etc.) oder null",
+    "orderId": "Bestellnummer oder null",
+    "trackingNumber": "Sendungsnummer / Tracking-ID oder null",
+    "carrier": "DHL | Hermes | DPD | UPS | Amazon Logistics | GLS | FedEx | null",
+    "productSummary": "Kurze prägnante Produkt-/Artikelbezeichnung oder null",
+    "stage": "ordered | shipped | out_for_delivery | delivered | return_initiated | returned | refunded | null",
+    "estimatedDelivery": "Voraussichtliches Lieferdatum (z.B. 'Dienstag, 2. Sept') oder null"
+  }
 }
 
 KATEGORIEN & UNTERSCHEIDUNGSREGELN (Wähle genau eine):
@@ -98,15 +108,22 @@ KATEGORIEN & UNTERSCHEIDUNGSREGELN (Wähle genau eine):
 8. "Update": Produkt-Updates, Release Notes, Changelogs, Plattform-Ankündigungen.
 9. "Sonstiges": Alles, was nicht in die obigen Kategorien passt.
 
-WICHTIGE UNTERSCHEIDUNGSHILFE:
-- "Werbung" vs "Spam": Werbung kommt von echten, legalen Shops/Diensten mit Rabatten/Produkten. Spam ist betrügerisch, aggressiv, phishing-verdächtig oder unverlangter dubioser Müll.
-- "Werbung" vs "Newsletter": Werbung will Produkte/Dienste verkaufen oder bewerben. Ein Newsletter liefert redaktionellen Inhalt, Wissen oder Branchen-News.
-- "Rechnung" vs "Benachrichtigung": Eine Rechnung enthält Geldbeträge oder Zahlungsbelege. Eine Benachrichtigung informiert über Status (z.B. "Paket versandt", "Passwort geändert").
+BESTELL- & SENDUNGS-REGELN ('orderInfo'):
+- Setze 'isOrder' nur auf true, wenn es sich um einen echten Kauf, eine Bestellung, einen Versand, eine Paketankündigung, Zustellung, Rechnung zu einer Ware oder Retoure/Erstattung handelt.
+- 'stage' Zuordnung:
+  - 'ordered': Bestellbestätigung, Auftragsbestätigung.
+  - 'shipped': Versandbestätigung, Paket wurde verschickt.
+  - 'out_for_delivery': In Zustellung, wird heute zugestellt.
+  - 'delivered': Paket erfolgreich zugestellt / übergeben.
+  - 'return_initiated': Retoure angemeldet / Retourenschein erstellt.
+  - 'returned': Retoure im Lager eingegangen / abgegeben.
+  - 'refunded': Erstattung veranlasst / Gutschrift erfolgt.
+- Wenn keine Bestellung/Lieferung vorliegt, setze "orderInfo": null.
 
 REGELN:
 1. 'summary': 1 bis maximal 3 kurze, informative Bullet-Points auf Deutsch.
-2. 'tags': 1 bis 3 kurze Stichwörter (z.B. 'Rabatt', 'Finanzen', 'Sicherheit', 'Versand').
-3. 'actionItems': Nur Aufgaben/To-Dos erfassen, die der Empfänger tatsächlich erledigen soll (z.B. "Zahlung veranlassen", "Termin bestätigen"). Bei reiner Werbung oder Newslettern bleibt actionItems leer [].`;
+2. 'tags': 1 bis 3 kurze Stichwörter (z.B. 'Amazon', 'Versand', 'Rechnung', 'Elektronik').
+3. 'actionItems': Nur Aufgaben/To-Dos erfassen, die der Empfänger tatsächlich erledigen soll.`;
 
   const userContent = `Absender: ${senderInfo}\nBetreff: ${subjectInfo}\n\nInhalt:\n${cleanedContent}`;
 
@@ -156,8 +173,23 @@ REGELN:
         category: "Sonstiges",
         tags: [],
         actionItems: [],
+        orderInfo: null,
       };
     }
+
+    const orderInfo =
+      parsed.orderInfo && parsed.orderInfo.isOrder
+        ? {
+            isOrder: true,
+            merchant: parsed.orderInfo.merchant || null,
+            orderId: parsed.orderInfo.orderId || null,
+            trackingNumber: parsed.orderInfo.trackingNumber || null,
+            carrier: parsed.orderInfo.carrier || null,
+            productSummary: parsed.orderInfo.productSummary || null,
+            stage: parsed.orderInfo.stage || "ordered",
+            estimatedDelivery: parsed.orderInfo.estimatedDelivery || null,
+          }
+        : null;
 
     return new Response(
       JSON.stringify({
@@ -165,6 +197,7 @@ REGELN:
         category: parsed.category || "Sonstiges",
         tags: Array.isArray(parsed.tags) ? parsed.tags : [],
         actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+        orderInfo: orderInfo,
         _debug: {
           model: model,
           durationMs: durationMs,

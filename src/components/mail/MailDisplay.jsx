@@ -15,16 +15,24 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  MessageSquare,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { AiInsightsCard } from "./AiInsightsCard";
+import { OrderTimelineCard } from "./OrderTimelineCard";
 import { SenderAvatar } from "./SenderAvatar";
+import { cn } from "@/lib/utils";
 
 let isHookAdded = false;
 
@@ -66,9 +74,18 @@ function formatFullDate(dateString) {
   });
 }
 
+function formatShortDate(dateString) {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return "";
+  return date.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 export function MailDisplay({
   selectedMailId,
   summaryMail,
+  thread,
+  onSelectMailInThread,
   isRead,
   onToggleRead,
   onMoveToTrash,
@@ -82,6 +99,7 @@ export function MailDisplay({
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showThreadStream, setShowThreadStream] = useState(true);
   const detailCache = useRef({});
 
   useEffect(() => {
@@ -106,7 +124,7 @@ export function MailDisplay({
     fetch(`/api/email?seq=${selectedMailId}&folder=${currentFolder}`)
       .then((res) => {
         if (!res.ok) {
-          throw new Error(`Failed to load email (${res.status})`);
+          throw new Error(`Fehler beim Laden der E-Mail (${res.status})`);
         }
         return res.json();
       })
@@ -137,7 +155,7 @@ export function MailDisplay({
         </div>
         <h3 className="mt-4 text-sm font-semibold text-foreground">Keine E-Mail ausgewählt</h3>
         <p className="mt-1 text-xs text-muted-foreground max-w-xs">
-          Wähle links eine E-Mail aus, um ihren Inhalt und Details anzuzeigen.
+          Wähle links eine E-Mail oder einen Verlauf aus, um den Inhalt und Status anzuzeigen.
         </p>
       </div>
     );
@@ -149,10 +167,14 @@ export function MailDisplay({
   const dateStr = detail?.date || summaryMail?.date;
   const isTrashFolder = currentFolder === "trash";
 
+  const threadMails = thread?.mails || (summaryMail ? [summaryMail] : []);
+  const isMultiMailThread = threadMails.length > 1;
+  const otherThreadMails = threadMails.filter((m) => String(m.id || m.seq) !== String(selectedMailId));
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* Top action toolbar */}
-      <div className="flex h-[52px] items-center justify-between px-4 shrink-0">
+      <div className="flex h-[52px] items-center justify-between px-4 shrink-0 border-b">
         <div className="flex items-center gap-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -208,7 +230,7 @@ export function MailDisplay({
                 {isRead ? (
                   <MailIcon className="h-4 w-4" />
                 ) : (
-                  <MailCheck className="h-4 w-4 text-blue-600" />
+                  <MailCheck className="h-4 w-4 text-primary" />
                 )}
                 <span className="sr-only">
                   {isRead ? "Als ungelesen markieren" : "Als gelesen markieren"}
@@ -268,8 +290,6 @@ export function MailDisplay({
         </div>
       </div>
 
-      <Separator />
-
       {/* Main Mail content */}
       {loading ? (
         <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
@@ -283,8 +303,81 @@ export function MailDisplay({
         </div>
       ) : (
         <div className="flex flex-1 flex-col overflow-y-auto">
-          {/* Header section */}
-          <div className="flex items-start gap-4 p-5">
+          {/* 1. Smart Order / Package Journey Stepper Card (if Order Thread) */}
+          {thread?.isOrderThread && thread.orderJourney && (
+            <OrderTimelineCard
+              orderJourney={thread.orderJourney}
+              onSelectMail={(targetId) => onSelectMailInThread && onSelectMailInThread(targetId)}
+              activeMailId={selectedMailId}
+            />
+          )}
+
+          {/* 2. Thread Conversation Stream Switcher (if thread has multiple mails) */}
+          {isMultiMailThread && (
+            <div className="mx-4 my-2 rounded-lg border bg-muted/30 p-3 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-medium text-foreground">
+                  <Layers className="h-3.5 w-3.5 text-primary" />
+                  <span>Verlauf dieser Konversation ({threadMails.length} Nachrichten)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowThreadStream(!showThreadStream)}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <span>{showThreadStream ? "Einklappen" : "Ausklappen"}</span>
+                  {showThreadStream ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                </button>
+              </div>
+
+              {showThreadStream && (
+                <div className="flex flex-col gap-1.5 pt-1">
+                  {threadMails.map((m) => {
+                    const mailId = m.id || m.seq;
+                    const isCurrent = String(mailId) === String(selectedMailId);
+                    return (
+                      <div
+                        key={mailId}
+                        onClick={() => onSelectMailInThread && onSelectMailInThread(mailId)}
+                        className={cn(
+                          "flex items-center justify-between gap-3 p-2 rounded-md border text-xs transition-all cursor-pointer",
+                          isCurrent
+                            ? "bg-background border-primary/40 shadow-2xs font-semibold"
+                            : "bg-background/60 border-border hover:bg-background text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <SenderAvatar email={m.email || m.from?.address} size="sm" />
+                          <div className="min-w-0">
+                            <span className="text-foreground truncate block">
+                              {m.name || m.from?.name || m.email || "Unbekannt"}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground truncate block">
+                              {m.subject || "(Kein Betreff)"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isCurrent && (
+                            <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-medium">
+                              Aktuell
+                            </span>
+                          )}
+                          <span className="text-[11px] text-muted-foreground font-mono">
+                            {formatShortDate(m.date)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3. Header section for currently active email in thread */}
+          <div className="flex items-start gap-4 p-5 pb-3">
             <SenderAvatar
               name={senderName}
               email={senderEmail}
@@ -322,7 +415,7 @@ export function MailDisplay({
             </h2>
           </div>
 
-          {/* AI Insights Card (Summary, Action Items, Tags) */}
+          {/* 4. AI Insights Card (Summary, Action Items, Tags) */}
           <AiInsightsCard
             analysis={aiAnalysis}
             loading={aiLoading}
@@ -355,7 +448,7 @@ export function MailDisplay({
           <div className="flex-1 p-5 overflow-x-auto text-sm text-foreground leading-relaxed">
             {detail?.html ? (
               <div
-                className="prose prose-sm max-w-none dark:prose-invert [&_a]:text-blue-600 [&_a]:underline [&_img]:max-w-full [&_table]:border-collapse"
+                className="prose prose-sm max-w-none dark:prose-invert [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_table]:border-collapse"
                 dangerouslySetInnerHTML={{
                   __html: sanitizeEmailHtml(detail.html),
                 }}

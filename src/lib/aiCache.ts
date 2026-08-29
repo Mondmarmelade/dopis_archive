@@ -1,3 +1,14 @@
+export interface OrderInfo {
+  isOrder: boolean;
+  merchant?: string | null;
+  orderId?: string | null;
+  trackingNumber?: string | null;
+  carrier?: string | null;
+  productSummary?: string | null;
+  stage?: "ordered" | "shipped" | "out_for_delivery" | "delivered" | "return_initiated" | "returned" | "refunded" | string | null;
+  estimatedDelivery?: string | null;
+}
+
 export interface AiAnalysisResult {
   summary: string[];
   category: string;
@@ -7,6 +18,7 @@ export interface AiAnalysisResult {
     due?: string | null;
     completed?: boolean;
   }[];
+  orderInfo?: OrderInfo | null;
   timestamp: number;
   _debug?: {
     model?: string;

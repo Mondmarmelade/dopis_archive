@@ -37,6 +37,7 @@ import {
   getAiSettings,
 } from "@/lib/aiCache";
 import { aiQueue, useAiQueue } from "@/lib/aiQueue";
+import { groupMailsIntoThreads } from "@/lib/threadEngine";
 
 export function Mail({
   defaultLayout = [18, 36, 46],
@@ -190,7 +191,7 @@ export function Mail({
       }
     } catch (err) {
       if (!isCached) {
-        setError(err.message || "Failed to load emails");
+        setError(err.message || "E-Mails konnten nicht geladen werden");
       }
     } finally {
       setLoading(false);
@@ -253,11 +254,12 @@ export function Mail({
     }
   }, []);
 
-  const handleSelectMail = useCallback((id) => {
-    setSelectedMailId(id);
-    const target = mails.find((m) => String(m.id || m.seq) === String(id));
+  const handleSelectMail = useCallback((id, threadItem) => {
+    const targetId = id || (threadItem?.latestMail?.id || threadItem?.latestMail?.seq);
+    setSelectedMailId(targetId);
+    const target = mails.find((m) => String(m.id || m.seq) === String(targetId));
     if (target && !target.read) {
-      markMailAsRead(id, true);
+      markMailAsRead(targetId, true);
     }
   }, [mails, markMailAsRead]);
 
@@ -331,38 +333,61 @@ export function Mail({
     });
   }, [mails, aiMap]);
 
-  // Memoized filtered mails list
-  const filteredMails = useMemo(() => {
-    return enrichedMails.filter((mail) => {
-      if (activeTab === "unread" && mail.read) {
+  // Group enriched mails into threads (Smart Orders + Subject Conversations)
+  const threads = useMemo(() => {
+    return groupMailsIntoThreads(enrichedMails, aiMap);
+  }, [enrichedMails, aiMap]);
+
+  // Filtered threads list
+  const filteredThreads = useMemo(() => {
+    return threads.filter((thread) => {
+      if (activeTab === "unread" && !thread.hasUnread) {
         return false;
       }
 
       if (selectedFolder === "newsletters") {
-        const cat = mail.ai?.category?.toLowerCase();
-        const isNewsletterOrPromo =
-          cat === "newsletter" ||
-          cat === "werbung" ||
-          cat === "angebote" ||
-          mail.subject?.toLowerCase().includes("newsletter");
-        if (!isNewsletterOrPromo) return false;
+        const isNewsletter = thread.mails.some((m) => {
+          const cat = m.ai?.category?.toLowerCase();
+          return (
+            cat === "newsletter" ||
+            cat === "werbung" ||
+            cat === "angebote" ||
+            m.subject?.toLowerCase().includes("newsletter")
+          );
+        });
+        if (!isNewsletter) return false;
       }
 
       if (searchQuery.trim().length > 0) {
         const q = searchQuery.toLowerCase();
-        const matchSubject = mail.subject?.toLowerCase().includes(q);
-        const matchName = mail.name?.toLowerCase().includes(q);
-        const matchEmail = mail.email?.toLowerCase().includes(q);
-        const matchCategory = mail.ai?.category?.toLowerCase().includes(q);
-        const matchTags = mail.ai?.tags?.some((t) => t.toLowerCase().includes(q));
-        if (!matchSubject && !matchName && !matchEmail && !matchCategory && !matchTags) {
-          return false;
-        }
+        const match = thread.mails.some((mail) => {
+          const matchSubject = mail.subject?.toLowerCase().includes(q);
+          const matchName = mail.name?.toLowerCase().includes(q);
+          const matchEmail = mail.email?.toLowerCase().includes(q);
+          const matchCategory = mail.ai?.category?.toLowerCase().includes(q);
+          const matchTags = mail.ai?.tags?.some((t) => t.toLowerCase().includes(q));
+          const matchProduct = thread.orderJourney?.productSummary?.toLowerCase().includes(q);
+          const matchMerchant = thread.orderJourney?.merchant?.toLowerCase().includes(q);
+          const matchOrder = thread.orderJourney?.orderId?.toLowerCase().includes(q);
+          const matchTracking = thread.orderJourney?.trackingNumber?.toLowerCase().includes(q);
+          return (
+            matchSubject ||
+            matchName ||
+            matchEmail ||
+            matchCategory ||
+            matchTags ||
+            matchProduct ||
+            matchMerchant ||
+            matchOrder ||
+            matchTracking
+          );
+        });
+        if (!match) return false;
       }
 
       return true;
     });
-  }, [enrichedMails, activeTab, selectedFolder, searchQuery]);
+  }, [threads, activeTab, selectedFolder, searchQuery]);
 
   const unreadCount = useMemo(() => mails.filter((m) => !m.read).length, [mails]);
 
@@ -370,20 +395,27 @@ export function Mail({
     return mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
   }, [mails, selectedMailId]);
 
+  const activeThread = useMemo(() => {
+    if (!selectedMailId) return null;
+    return threads.find((t) =>
+      t.mails.some((m) => String(m.id || m.seq) === String(selectedMailId))
+    ) || null;
+  }, [threads, selectedMailId]);
+
   const currentAiAnalysis = selectedMailId ? aiMap[selectedMailId] || null : null;
 
   const folderTitle =
     selectedFolder === "inbox"
-      ? "Inbox"
+      ? "Posteingang"
       : selectedFolder === "newsletters"
-      ? "Newsletters"
+      ? "Newsletter"
       : selectedFolder === "junk"
-      ? "Junk"
+      ? "Spam"
       : selectedFolder === "archive"
-      ? "Archive"
+      ? "Archiv"
       : selectedFolder === "trash"
-      ? "Trash"
-      : "Mailbox";
+      ? "Papierkorb"
+      : "Postfach";
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -411,35 +443,35 @@ export function Mail({
             isCollapsed={isCollapsed}
             links={[
               {
-                title: "Inbox",
+                title: "Posteingang",
                 label: currentView === "mails" && selectedFolder === "inbox" && unreadCount > 0 ? String(unreadCount) : "",
                 icon: Inbox,
                 variant: currentView === "mails" && selectedFolder === "inbox" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("inbox"),
               },
               {
-                title: "Newsletters",
+                title: "Newsletter",
                 label: "",
                 icon: Newspaper,
                 variant: currentView === "mails" && selectedFolder === "newsletters" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("newsletters"),
               },
               {
-                title: "Junk",
+                title: "Spam",
                 label: "",
                 icon: AlertOctagon,
                 variant: currentView === "mails" && selectedFolder === "junk" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("junk"),
               },
               {
-                title: "Archive",
+                title: "Archiv",
                 label: "",
                 icon: Archive,
                 variant: currentView === "mails" && selectedFolder === "archive" ? "default" : "ghost",
                 onClick: () => handleSelectFolder("archive"),
               },
               {
-                title: "Trash",
+                title: "Papierkorb",
                 label: "",
                 icon: Trash2,
                 variant: currentView === "mails" && selectedFolder === "trash" ? "default" : "ghost",
@@ -462,7 +494,7 @@ export function Mail({
                 },
               },
               {
-                title: "Settings",
+                title: "Einstellungen",
                 label: "",
                 icon: Settings,
                 variant: currentView === "settings" ? "default" : "ghost",
@@ -509,17 +541,17 @@ export function Mail({
                       className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer transition-transform active:scale-95"
                       onClick={() => fetchEmails(true, selectedFolder)}
                       disabled={refreshing || loading}
-                      title="Refresh mailbox"
+                      title="Postfach aktualisieren"
                     >
                       <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin text-primary")} />
-                      <span className="sr-only">Refresh</span>
+                      <span className="sr-only">Aktualisieren</span>
                     </Button>
                     <TabsList className="h-8">
                       <TabsTrigger value="all" className="text-xs px-2.5 h-7 cursor-pointer">
-                        All
+                        Alle
                       </TabsTrigger>
                       <TabsTrigger value="unread" className="text-xs px-2.5 h-7 cursor-pointer">
-                        Unread {unreadCount > 0 && `(${unreadCount})`}
+                        Ungelesen {unreadCount > 0 && `(${unreadCount})`}
                       </TabsTrigger>
                     </TabsList>
                   </div>
@@ -528,14 +560,14 @@ export function Mail({
                 <Separator />
 
                 {/* Search Input */}
-                <div className="p-4 shrink-0">
+                <div className="p-3 shrink-0">
                   <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
-                      placeholder={`Search in ${folderTitle.toLowerCase()}...`}
+                      placeholder={`In ${folderTitle} suchen...`}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-8 h-9 text-xs"
+                      className="pl-8 h-8 text-xs"
                     />
                   </div>
                 </div>
@@ -545,11 +577,11 @@ export function Mail({
                   {loading && mails.length === 0 ? (
                     <div className="flex h-64 flex-col items-center justify-center p-8 text-muted-foreground">
                       <RefreshCw className="h-6 w-6 animate-spin text-primary" />
-                      <p className="mt-3 text-xs">Loading {folderTitle.toLowerCase()} from IMAP...</p>
+                      <p className="mt-3 text-xs">{folderTitle} wird synchronisiert...</p>
                     </div>
                   ) : error && mails.length === 0 ? (
                     <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-destructive">
-                      <p className="text-sm font-medium">Failed to load emails</p>
+                      <p className="text-sm font-medium">E-Mails konnten nicht geladen werden</p>
                       <p className="mt-1 text-xs text-muted-foreground">{error}</p>
                       <Button
                         variant="outline"
@@ -557,13 +589,13 @@ export function Mail({
                         className="mt-4 cursor-pointer"
                         onClick={() => fetchEmails(false, selectedFolder)}
                       >
-                        Retry
+                        Erneut versuchen
                       </Button>
                     </div>
                   ) : (
                     <TabsContent value={activeTab} className="m-0 border-0 outline-none">
                       <MailList
-                        items={filteredMails}
+                        items={filteredThreads}
                         selectedMailId={selectedMailId}
                         onSelectMail={handleSelectMail}
                       />
@@ -575,11 +607,13 @@ export function Mail({
 
             <ResizableHandle withHandle />
 
-            {/* Right Column: Mail Detail Display with AI Insights */}
+            {/* Right Column: Mail Detail Display with AI Insights & Thread Stream */}
             <ResizablePanel defaultSize={defaultLayout[2]} minSize={30}>
               <MailDisplay
                 selectedMailId={selectedMailId}
                 summaryMail={selectedSummaryMail}
+                thread={activeThread}
+                onSelectMailInThread={handleSelectMail}
                 isRead={selectedSummaryMail ? selectedSummaryMail.read : false}
                 currentFolder={selectedFolder}
                 aiAnalysis={currentAiAnalysis}
