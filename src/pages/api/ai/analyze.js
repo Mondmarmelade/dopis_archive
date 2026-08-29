@@ -84,7 +84,6 @@ Antworte IMMER und AUSSCHLIESSLICH mit einem validen JSON-Objekt im folgenden Fo
       "task": "Konkrete To-Do oder Handlungsaufforderung",
       "due": "Frist/Datum oder null"
     }
-  ],
   "orderInfo": {
     "isOrder": true,
     "merchant": "Händlername (z. B. Amazon, Otto, Zalando, eBay, Apple, etc.) oder null",
@@ -92,8 +91,11 @@ Antworte IMMER und AUSSCHLIESSLICH mit einem validen JSON-Objekt im folgenden Fo
     "trackingNumber": "Sendungsnummer / Tracking-ID oder null",
     "carrier": "DHL | Hermes | DPD | UPS | Amazon Logistics | GLS | FedEx | null",
     "productSummary": "Kurze prägnante Produkt-/Artikelbezeichnung oder null",
-    "stage": "ordered | shipped | out_for_delivery | delivered | return_initiated | returned | refunded | null",
-    "estimatedDelivery": "Voraussichtliches Lieferdatum (z.B. 'Dienstag, 2. Sept') oder null"
+    "stage": "ordered | payment_confirmed | shipped | out_for_delivery | delivered | return_initiated | return_dropped | returned | refunded | cancelled | null",
+    "statusTitle": "Prägnanter Ereignis-Titel auf Deutsch (z. B. 'Bestellung bestätigt', 'Versand erfolgt', 'In Zustellung', 'Paket zugestellt', 'Retourenschein erstellt', 'Retoure abgegeben', 'Erstattung verbucht') oder null",
+    "statusDetail": "Wichtige Kontext-Details auf Deutsch (z. B. 'Zustellung heute bis 15:00 Uhr', 'An Nachbar übergeben', '49,99 € auf Kreditkarte erstattet', 'Paket in Filiale bereit') oder null",
+    "deliveryLocation": "Ablageort, Packstation oder Empfängername (z. B. 'Packstation 102', 'Nachbar Herr Meier', 'Wunschort Terrasse') oder null",
+    "estimatedDelivery": "Voraussichtliches Lieferdatum/Zeitfenster (z. B. 'Dienstag, 2. Sept') oder null"
   }
 }
 
@@ -112,12 +114,15 @@ BESTELL- & SENDUNGS-REGELN ('orderInfo'):
 - Setze 'isOrder' nur auf true, wenn es sich um einen echten Kauf, eine Bestellung, einen Versand, eine Paketankündigung, Zustellung, Rechnung zu einer Ware oder Retoure/Erstattung handelt.
 - 'stage' Zuordnung:
   - 'ordered': Bestellbestätigung, Auftragsbestätigung.
-  - 'shipped': Versandbestätigung, Paket wurde verschickt.
-  - 'out_for_delivery': In Zustellung, wird heute zugestellt.
-  - 'delivered': Paket erfolgreich zugestellt / übergeben.
-  - 'return_initiated': Retoure angemeldet / Retourenschein erstellt.
-  - 'returned': Retoure im Lager eingegangen / abgegeben.
+  - 'payment_confirmed': Zahlungseingang, Zahlungsbeleg, Rechnung.
+  - 'shipped': Versandbestätigung, Paket wurde an Paketdienst übergeben.
+  - 'out_for_delivery': In Zustellung, Zustellankündigung ("Paket kommt heute").
+  - 'delivered': Paket erfolgreich zugestellt / übergeben / in Packstation.
+  - 'return_initiated': Retoure angemeldet / Retourenlabel erstellt.
+  - 'return_dropped': Retoure beim Paketdienst/Filiale abgegeben.
+  - 'returned': Retoure im Logistikzentrum eingegangen / geprüft.
   - 'refunded': Erstattung veranlasst / Gutschrift erfolgt.
+  - 'cancelled': Stornierung bestätigt.
 - Wenn keine Bestellung/Lieferung vorliegt, setze "orderInfo": null.
 
 REGELN:
@@ -187,6 +192,9 @@ REGELN:
             carrier: parsed.orderInfo.carrier || null,
             productSummary: parsed.orderInfo.productSummary || null,
             stage: parsed.orderInfo.stage || "ordered",
+            statusTitle: parsed.orderInfo.statusTitle || null,
+            statusDetail: parsed.orderInfo.statusDetail || null,
+            deliveryLocation: parsed.orderInfo.deliveryLocation || null,
             estimatedDelivery: parsed.orderInfo.estimatedDelivery || null,
           }
         : null;

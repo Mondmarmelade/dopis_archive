@@ -1,11 +1,20 @@
 import { getCachedAnalysis, type AiAnalysisResult, type OrderInfo } from "./aiCache";
 
-export interface TimelineStep {
-  stage: "ordered" | "shipped" | "out_for_delivery" | "delivered" | "return_initiated" | "returned" | "refunded";
-  label: string;
-  date?: string;
-  mailId: string | number;
-  mailSubject: string;
+export type MilestoneStatus = "completed" | "current" | "pending";
+
+export interface TimelineMilestone {
+  id: string;
+  stage: string;
+  title: string;
+  detail?: string | null;
+  date?: string | null;
+  mailId?: string | number | null;
+  mailSubject?: string | null;
+  status: MilestoneStatus;
+  isPredicted?: boolean;
+  carrier?: string | null;
+  trackingNumber?: string | null;
+  location?: string | null;
 }
 
 export interface OrderJourney {
@@ -14,9 +23,13 @@ export interface OrderJourney {
   trackingNumber?: string | null;
   carrier?: string | null;
   productSummary?: string | null;
-  currentStage: "ordered" | "shipped" | "out_for_delivery" | "delivered" | "return_initiated" | "returned" | "refunded" | string;
+  currentStage: string;
+  statusTitle?: string | null;
+  statusDetail?: string | null;
+  deliveryLocation?: string | null;
   estimatedDelivery?: string | null;
-  timeline: TimelineStep[];
+  milestones: TimelineMilestone[];
+  timeline: TimelineMilestone[]; // Alias for backwards compatibility
 }
 
 export interface ThreadItem {
@@ -35,18 +48,23 @@ export interface ThreadItem {
 // Stage ranking for progression calculation
 const STAGE_ORDER: Record<string, number> = {
   ordered: 1,
-  shipped: 2,
-  out_for_delivery: 3,
-  delivered: 4,
-  return_initiated: 5,
-  returned: 6,
-  refunded: 7,
+  payment_confirmed: 2,
+  shipped: 3,
+  out_for_delivery: 4,
+  delivered: 5,
+  return_initiated: 6,
+  return_dropped: 7,
+  returned: 8,
+  refunded: 9,
+  cancelled: 10,
 };
 
 export function getStageLabel(stage: string): string {
   switch (stage?.toLowerCase()) {
     case "ordered":
       return "Bestellt";
+    case "payment_confirmed":
+      return "Rechnung / Bezahlt";
     case "shipped":
       return "Versendet";
     case "out_for_delivery":
@@ -55,12 +73,43 @@ export function getStageLabel(stage: string): string {
       return "Zugestellt";
     case "return_initiated":
       return "Retoure angemeldet";
+    case "return_dropped":
+      return "Retoure abgegeben";
     case "returned":
       return "Retourniert";
     case "refunded":
       return "Erstattet";
+    case "cancelled":
+      return "Storniert";
     default:
       return stage || "Status unklar";
+  }
+}
+
+export function getDefaultMilestoneTitle(stage: string): string {
+  switch (stage?.toLowerCase()) {
+    case "ordered":
+      return "Bestellung bestätigt";
+    case "payment_confirmed":
+      return "Rechnung / Zahlung verbucht";
+    case "shipped":
+      return "Paket verschickt";
+    case "out_for_delivery":
+      return "In Zustellung heute";
+    case "delivered":
+      return "Erfolgreich zugestellt";
+    case "return_initiated":
+      return "Retourenschein erstellt";
+    case "return_dropped":
+      return "Retoure bei Paketdienst abgegeben";
+    case "returned":
+      return "Im Lager eingetroffen";
+    case "refunded":
+      return "Gutschrift / Erstattung erfolgt";
+    case "cancelled":
+      return "Bestellung storniert";
+    default:
+      return getStageLabel(stage);
   }
 }
 
@@ -204,22 +253,24 @@ export function groupMailsIntoThreads(
     let orderJourney: OrderJourney | null = null;
 
     if (isOrder) {
-      // Aggregate Order Details across all emails in this order thread
       let merchant: string | null = null;
       let orderId: string | null = null;
       let trackingNumber: string | null = null;
       let carrier: string | null = null;
       let productSummary: string | null = null;
       let estimatedDelivery: string | null = null;
+      let deliveryLocation: string | null = null;
+      let statusTitle: string | null = null;
+      let statusDetail: string | null = null;
       let highestStageRank = 0;
       let currentStage: string = "ordered";
 
-      const timeline: TimelineStep[] = [];
+      // Walk through from oldest to newest to build actual chronological milestones
+      const chronological = [...sorted].sort((a, b) => a._dateObj.getTime() - b._dateObj.getTime());
+      const rawMilestones: TimelineMilestone[] = [];
 
-      // Walk through from oldest to newest to build chronological timeline
-      const chronological = [...sorted].reverse();
-
-      for (const m of chronological) {
+      for (let i = 0; i < chronological.length; i++) {
+        const m = chronological[i];
         const o = m._ai?.orderInfo;
         if (o) {
           if (!merchant && o.merchant) merchant = o.merchant;
@@ -228,6 +279,9 @@ export function groupMailsIntoThreads(
           if (!carrier && o.carrier) carrier = o.carrier;
           if (!productSummary && o.productSummary) productSummary = o.productSummary;
           if (o.estimatedDelivery) estimatedDelivery = o.estimatedDelivery;
+          if (o.deliveryLocation) deliveryLocation = o.deliveryLocation;
+          if (o.statusTitle) statusTitle = o.statusTitle;
+          if (o.statusDetail) statusDetail = o.statusDetail;
 
           const stage = (o.stage || "ordered").toLowerCase();
           const rank = STAGE_ORDER[stage] || 1;
@@ -236,14 +290,62 @@ export function groupMailsIntoThreads(
             currentStage = stage;
           }
 
-          timeline.push({
-            stage: stage as any,
-            label: getStageLabel(stage),
+          rawMilestones.push({
+            id: `milestone_${m._id}`,
+            stage: stage,
+            title: o.statusTitle || getDefaultMilestoneTitle(stage),
+            detail: o.statusDetail || o.deliveryLocation || (o.carrier ? `${o.carrier} ${o.trackingNumber || ""}` : null),
             date: m.date,
             mailId: m._id,
             mailSubject: m.subject || "(Kein Betreff)",
+            status: "completed",
+            carrier: o.carrier,
+            trackingNumber: o.trackingNumber,
+            location: o.deliveryLocation,
           });
         }
+      }
+
+      // Mark the latest milestone in the chain as "current"
+      if (rawMilestones.length > 0) {
+        rawMilestones[rawMilestones.length - 1].status = "current";
+      }
+
+      // If the latest state is still in transit (ordered/shipped/out_for_delivery), append a dynamic pending "Zustellung" milestone
+      const isDelivered = rawMilestones.some((ms) => ms.stage === "delivered");
+      const isReturned = rawMilestones.some((ms) => ms.stage === "refunded" || ms.stage === "returned");
+      const isCancelled = rawMilestones.some((ms) => ms.stage === "cancelled");
+
+      if (!isDelivered && !isReturned && !isCancelled) {
+        const lastStage = rawMilestones[rawMilestones.length - 1]?.stage;
+        if (lastStage === "ordered" || lastStage === "shipped" || lastStage === "out_for_delivery" || lastStage === "payment_confirmed") {
+          rawMilestones.push({
+            id: `milestone_predicted_delivery`,
+            stage: "delivered",
+            title: "Zustellung",
+            detail: estimatedDelivery ? `Voraussichtlich: ${estimatedDelivery}` : "Wird zugestellt",
+            date: null,
+            mailId: null,
+            status: "pending",
+            isPredicted: true,
+          });
+        }
+      }
+
+      // If return is initiated but not yet refunded, append pending "Erstattung"
+      const isReturnInitiated = rawMilestones.some((ms) => ms.stage === "return_initiated" || ms.stage === "return_dropped" || ms.stage === "returned");
+      const isRefunded = rawMilestones.some((ms) => ms.stage === "refunded");
+      if (isReturnInitiated && !isRefunded) {
+        rawMilestones.push({
+          id: `milestone_predicted_refund`,
+          stage: "refunded",
+          title: "Erstattung",
+          detail: "Ausstehend nach Prüfung",
+          date: null,
+          mailId: null,
+          status: "pending",
+          isPredicted: true,
+        });
       }
 
       orderJourney = {
@@ -253,8 +355,12 @@ export function groupMailsIntoThreads(
         carrier,
         productSummary,
         currentStage,
+        statusTitle,
+        statusDetail,
+        deliveryLocation,
         estimatedDelivery,
-        timeline,
+        milestones: rawMilestones,
+        timeline: rawMilestones, // backwards compatibility
       };
     }
 

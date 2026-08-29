@@ -5,7 +5,22 @@ export interface OrderInfo {
   trackingNumber?: string | null;
   carrier?: string | null;
   productSummary?: string | null;
-  stage?: "ordered" | "shipped" | "out_for_delivery" | "delivered" | "return_initiated" | "returned" | "refunded" | string | null;
+  stage?:
+    | "ordered"
+    | "payment_confirmed"
+    | "shipped"
+    | "out_for_delivery"
+    | "delivered"
+    | "return_initiated"
+    | "return_dropped"
+    | "returned"
+    | "refunded"
+    | "cancelled"
+    | string
+    | null;
+  statusTitle?: string | null;
+  statusDetail?: string | null;
+  deliveryLocation?: string | null;
   estimatedDelivery?: string | null;
 }
 

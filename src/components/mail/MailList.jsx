@@ -195,7 +195,7 @@ export function MailList({ items = [], selectedMailId, onSelectMail }) {
                 {isOrder && (
                   <span className="inline-flex items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.2 text-[10px] font-semibold text-primary">
                     <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                    {getStageLabel(order.currentStage)}
+                    {order.statusTitle || getStageLabel(order.currentStage)}
                   </span>
                 )}
 
