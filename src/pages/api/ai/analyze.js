@@ -69,7 +69,7 @@ export async function POST({ request, cookies }) {
   }
 
   const systemPrompt = `Du bist ein hochentwickelter E-Mail-Klassifizierungs- und Analyse-Assistent für den E-Mail-Client 'Dopis'.
-Deine Aufgabe ist es, die E-Mail präzise zu kategorisieren, zusammenzufassen, etwaige Handlungsaufforderungen zu extrahieren und Bestell-/Sendungsinformationen für das smarte Paket- und E-Commerce-Tracking zu erfassen.
+Deine Aufgabe ist es, die E-Mail präzise zu kategorisieren, zusammenzufassen, etwaige Handlungsaufforderungen zu extrahieren sowie Bestellungen (physische Pakete, digitale Güter, Tickets, Buchungen, Abos) und Zahlungsbelege (PayPal, Klarna, Stripe, Bank) intelligent zu strukturieren.
 
 Antworte IMMER und AUSSCHLIESSLICH mit einem validen JSON-Objekt im folgenden Format (kein Markdown, keine Backticks):
 {
@@ -84,18 +84,30 @@ Antworte IMMER und AUSSCHLIESSLICH mit einem validen JSON-Objekt im folgenden Fo
       "task": "Konkrete To-Do oder Handlungsaufforderung",
       "due": "Frist/Datum oder null"
     }
+  ],
+  "paymentInfo": {
+    "isPaymentReceipt": true,
+    "provider": "PayPal | Klarna | Stripe | Apple Pay | Google Pay | Kreditkarte | Banküberweisung | null",
+    "paidTo": "Empfänger / Händlername (z. B. 'CTS Eventim AG', 'Steam Games', 'Spotify', 'Deutsche Bahn', 'Amazon') oder null",
+    "amount": "Geldbetrag mit Währung (z. B. '89,00 EUR', '14,99 €') oder null",
+    "transactionId": "Transaktionsnummer / Transaktionscode (z. B. '9AB12345CD') oder null"
+  },
   "orderInfo": {
     "isOrder": true,
-    "merchant": "Händlername (z. B. Amazon, Otto, Zalando, eBay, Apple, etc.) oder null",
-    "orderId": "Bestellnummer oder null",
+    "orderType": "physical | digital | ticket | booking | subscription | service",
+    "merchant": "Händlername (z. B. Eventim, Deutsche Bahn, Amazon, Otto, Steam, Apple, Airbnb, etc.) oder null",
+    "orderId": "Bestellnummer oder Buchungsnummer oder null",
     "trackingNumber": "Sendungsnummer / Tracking-ID oder null",
     "carrier": "DHL | Hermes | DPD | UPS | Amazon Logistics | GLS | FedEx | null",
-    "productSummary": "Kurze prägnante Produkt-/Artikelbezeichnung oder null",
-    "stage": "ordered | payment_confirmed | shipped | out_for_delivery | delivered | return_initiated | return_dropped | returned | refunded | cancelled | null",
-    "statusTitle": "Prägnanter Ereignis-Titel auf Deutsch (z. B. 'Bestellung bestätigt', 'Versand erfolgt', 'In Zustellung', 'Paket zugestellt', 'Retourenschein erstellt', 'Retoure abgegeben', 'Erstattung verbucht') oder null",
-    "statusDetail": "Wichtige Kontext-Details auf Deutsch (z. B. 'Zustellung heute bis 15:00 Uhr', 'An Nachbar übergeben', '49,99 € auf Kreditkarte erstattet', 'Paket in Filiale bereit') oder null",
-    "deliveryLocation": "Ablageort, Packstation oder Empfängername (z. B. 'Packstation 102', 'Nachbar Herr Meier', 'Wunschort Terrasse') oder null",
-    "estimatedDelivery": "Voraussichtliches Lieferdatum/Zeitfenster (z. B. 'Dienstag, 2. Sept') oder null"
+    "productSummary": "Kurze prägnante Produkt-/Ticket-/Buchungsbezeichnung (z. B. '2x Tickets: Rammstein Tour 2026', 'ICE Ticket Berlin-München', 'Sony Kopfhörer') oder null",
+    "amount": "Gesamtbetrag (z. B. '89,00 €') oder null",
+    "stage": "ordered | payment_confirmed | tickets_issued | digital_delivered | shipped | out_for_delivery | delivered | return_initiated | return_dropped | returned | refunded | cancelled | null",
+    "statusTitle": "Prägnanter Ereignis-Titel auf Deutsch (z. B. 'Bestellung bestätigt', 'Zahlung via PayPal bestätigt', 'Tickets bereitgestellt', 'Versand erfolgt', 'In Zustellung', 'Paket zugestellt', 'Retourenschein erstellt', 'Erstattung verbucht') oder null",
+    "statusDetail": "Wichtige Kontext-Details auf Deutsch (z. B. 'Zahlung über 89,00 € autorisiert', '2 E-Tickets als PDF im Anhang', 'Zustellung heute bis 15:00 Uhr', 'An Nachbar übergeben') oder null",
+    "eventDate": "Datum & Uhrzeit des Events / der Reise (z. B. '24. Okt 2026, 20:00 Uhr') oder null",
+    "venue": "Veranstaltungsort / Strecke (z. B. 'Olympiastadion Berlin', 'Berlin Hbf -> München Hbf') oder null",
+    "deliveryLocation": "Ablageort, Packstation oder Empfängername oder null",
+    "estimatedDelivery": "Voraussichtliches Lieferdatum/Zeitfenster oder null"
   }
 }
 
@@ -103,32 +115,42 @@ KATEGORIEN & UNTERSCHEIDUNGSREGELN (Wähle genau eine):
 1. "Spam": Unerwünschte Massenmails, Betrug, Phishing, verdächtige Gewinne/Erbschaften, dubiose Krypto-/Pillenangebote, gefälschte Rechnungen, unseriöse unbekannte Absender.
 2. "Werbung": Legitime kommerzielle Produktwerbung, Rabattaktionen, Sonderangebote, Sales, Shopping-Deals von bekannten Marken und Online-Shops (z.B. Amazon Deals, Zalando, Otto, SaaS Promo).
 3. "Newsletter": Abonnierte redaktionelle Inhalte, Fachartikel, Blogs, Magazine, Wissensbeiträge, wöchentliche/monatliche Digests.
-4. "Rechnung": Kaufbelege, Rechnungen, Zahlungsbestätigungen, Quittungen, Bank-Abrechnungen, Verträge mit Beträgen.
-5. "Benachrichtigung": Automatische Systemmeldungen, Sicherheitswarnungen, Login-Alerts, 2FA-Codes, Paket-/Versand-Tracking, Statusänderungen.
+4. "Rechnung": Kaufbelege, Rechnungen, Zahlungsbestätigungen (PayPal, Klarna, Bank), Quittungen, Abrechnungen.
+5. "Benachrichtigung": Automatische Systemmeldungen, Sicherheitswarnungen, Login-Alerts, 2FA-Codes, Paket-/Versand-Tracking, Ticketbereitstellung, Statusänderungen.
 6. "Dringend": Zeitkritische persönliche oder berufliche Anfragen mit hoher Priorität oder naher Deadline.
 7. "Persönlich": Direkte 1:1-Kommunikation von Freunden, Familie, Kollegen oder Kunden.
 8. "Update": Produkt-Updates, Release Notes, Changelogs, Plattform-Ankündigungen.
 9. "Sonstiges": Alles, was nicht in die obigen Kategorien passt.
 
-BESTELL- & SENDUNGS-REGELN ('orderInfo'):
-- Setze 'isOrder' nur auf true, wenn es sich um einen echten Kauf, eine Bestellung, einen Versand, eine Paketankündigung, Zustellung, Rechnung zu einer Ware oder Retoure/Erstattung handelt.
+BESTELL-, TICKET- & ZAHLUNGS-REGELN:
+- Setze 'paymentInfo' nur, wenn es sich um einen Zahlungsdienstleister-Beleg handelt (z.B. PayPal "Ihre Zahlung an...", Klarna Abrechnung, Stripe Beleg, Kreditkartenabrechnung).
+- 'orderType' Zuordnung:
+  - 'physical': Physische Waren & Pakete (Amazon, Otto, Kleidung, Elektronik).
+  - 'ticket': Konzert-, Theater-, Kino-, Festival-, Sport- oder Bahntickets (Eventim, Ticketmaster, Deutsche Bahn).
+  - 'booking': Hotel, Flug, Airbnb, Mietwagen, Tischreservierung.
+  - 'digital': Software, E-Books, Games (Steam, Playstation), Lizenzschlüssel, Downloads.
+  - 'subscription': Spotify, Netflix, SaaS-Abos, Mitgliedschaften.
+  - 'service': Dienstleistungen, Handwerker, Beratung.
 - 'stage' Zuordnung:
-  - 'ordered': Bestellbestätigung, Auftragsbestätigung.
-  - 'payment_confirmed': Zahlungseingang, Zahlungsbeleg, Rechnung.
-  - 'shipped': Versandbestätigung, Paket wurde an Paketdienst übergeben.
-  - 'out_for_delivery': In Zustellung, Zustellankündigung ("Paket kommt heute").
-  - 'delivered': Paket erfolgreich zugestellt / übergeben / in Packstation.
-  - 'return_initiated': Retoure angemeldet / Retourenlabel erstellt.
-  - 'return_dropped': Retoure beim Paketdienst/Filiale abgegeben.
-  - 'returned': Retoure im Logistikzentrum eingegangen / geprüft.
-  - 'refunded': Erstattung veranlasst / Gutschrift erfolgt.
-  - 'cancelled': Stornierung bestätigt.
-- Wenn keine Bestellung/Lieferung vorliegt, setze "orderInfo": null.
+  - 'ordered': Bestellung/Buchung aufgegeben oder bestätigt.
+  - 'payment_confirmed': Zahlung erhalten / Beleg erstellt.
+  - 'tickets_issued': Tickets generiert / E-Tickets bereitgestellt / Barcode vorhanden.
+  - 'digital_delivered': Digitales Produkt bereitgestellt / Zugang freigeschaltet.
+  - 'shipped': Physisches Paket verschickt.
+  - 'out_for_delivery': In Zustellung heute.
+  - 'delivered': Zugestellt / übergeben.
+  - 'return_initiated': Retoure angemeldet.
+  - 'return_dropped': Retoure abgegeben.
+  - 'returned': Retoure eingegangen.
+  - 'refunded': Erstattung veranlasst / Gutschrift verbucht.
+  - 'cancelled': Storniert.
+- Wenn keine Bestellung/Lieferung/Ticket vorliegt, setze "orderInfo": null.
+- Wenn kein Zahlungsbeleg vorliegt, setze "paymentInfo": null.
 
 REGELN:
 1. 'summary': 1 bis maximal 3 kurze, informative Bullet-Points auf Deutsch.
-2. 'tags': 1 bis 3 kurze Stichwörter (z.B. 'Amazon', 'Versand', 'Rechnung', 'Elektronik').
-3. 'actionItems': Nur Aufgaben/To-Dos erfassen, die der Empfänger tatsächlich erledigen soll.`;
+2. 'tags': 1 bis 3 kurze Stichwörter (z.B. 'PayPal', 'Eventim', 'Tickets', 'Rechnung', 'Konzert').
+3. 'actionItems': Nur Aufgaben erfassen, die der Nutzer erledigen soll.`;
 
   const userContent = `Absender: ${senderInfo}\nBetreff: ${subjectInfo}\n\nInhalt:\n${cleanedContent}`;
 
@@ -178,22 +200,38 @@ REGELN:
         category: "Sonstiges",
         tags: [],
         actionItems: [],
+        paymentInfo: null,
         orderInfo: null,
       };
     }
 
+    const paymentInfo =
+      parsed.paymentInfo && parsed.paymentInfo.isPaymentReceipt
+        ? {
+            isPaymentReceipt: true,
+            provider: parsed.paymentInfo.provider || null,
+            paidTo: parsed.paymentInfo.paidTo || null,
+            amount: parsed.paymentInfo.amount || null,
+            transactionId: parsed.paymentInfo.transactionId || null,
+          }
+        : null;
+
     const orderInfo =
-      parsed.orderInfo && parsed.orderInfo.isOrder
+      parsed.orderInfo && (parsed.orderInfo.isOrder || parsed.orderInfo.orderType)
         ? {
             isOrder: true,
+            orderType: parsed.orderInfo.orderType || "physical",
             merchant: parsed.orderInfo.merchant || null,
             orderId: parsed.orderInfo.orderId || null,
             trackingNumber: parsed.orderInfo.trackingNumber || null,
             carrier: parsed.orderInfo.carrier || null,
             productSummary: parsed.orderInfo.productSummary || null,
+            amount: parsed.orderInfo.amount || null,
             stage: parsed.orderInfo.stage || "ordered",
             statusTitle: parsed.orderInfo.statusTitle || null,
             statusDetail: parsed.orderInfo.statusDetail || null,
+            eventDate: parsed.orderInfo.eventDate || null,
+            venue: parsed.orderInfo.venue || null,
             deliveryLocation: parsed.orderInfo.deliveryLocation || null,
             estimatedDelivery: parsed.orderInfo.estimatedDelivery || null,
           }
@@ -205,6 +243,7 @@ REGELN:
         category: parsed.category || "Sonstiges",
         tags: Array.isArray(parsed.tags) ? parsed.tags : [],
         actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+        paymentInfo: paymentInfo,
         orderInfo: orderInfo,
         _debug: {
           model: model,

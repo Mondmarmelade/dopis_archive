@@ -11,23 +11,59 @@ import {
   Receipt,
   AlertCircle,
   Check,
+  Ticket,
+  CreditCard,
+  Calendar,
+  Laptop,
+  Key,
+  Download,
+  Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getTrackingUrl, getStageLabel } from "@/lib/threadEngine";
 
-function getMilestoneIcon(stage = "") {
+function getHeaderIcon(orderType = "physical") {
+  switch (orderType) {
+    case "ticket":
+      return Ticket;
+    case "booking":
+      return Calendar;
+    case "digital":
+      return Laptop;
+    case "subscription":
+      return RefreshCwIcon;
+    default:
+      return Package;
+  }
+}
+
+function RefreshCwIcon(props) {
+  return <CreditCard {...props} />;
+}
+
+function getMilestoneIcon(stage = "", orderType = "physical") {
   const s = stage.toLowerCase();
-  if (s.includes("order") || s.includes("bestell")) return ShoppingBag;
-  if (s.includes("payment") || s.includes("rechnung") || s.includes("bezahlt")) return Receipt;
+  if (s.includes("pay") || s.includes("bezahlt") || s.includes("rechnung") || s.includes("autorisiert")) {
+    return CreditCard;
+  }
+  if (s.includes("ticket") || s.includes("barcode") || s.includes("einlass")) {
+    return Ticket;
+  }
+  if (s.includes("digital") || s.includes("lizenz") || s.includes("zugang")) {
+    return Key;
+  }
+  if (s.includes("order") || s.includes("bestell") || s.includes("buch")) {
+    return orderType === "ticket" ? Ticket : orderType === "booking" ? Calendar : ShoppingBag;
+  }
   if (s.includes("ship") || s.includes("versand") || s.includes("paket")) return Package;
   if (s.includes("delivery") || s.includes("zustell") || s.includes("unterwegs")) return Truck;
   if (s.includes("deliver") || s.includes("zugestellt") || s.includes("angekommen")) return CheckCircle2;
   if (s.includes("return") || s.includes("retoure") || s.includes("rück")) return RotateCcw;
   if (s.includes("refund") || s.includes("erstatt") || s.includes("gutschrift")) return Receipt;
   if (s.includes("cancel") || s.includes("storno")) return AlertCircle;
-  return Package;
+  return orderType === "ticket" ? Ticket : Package;
 }
 
 function formatMilestoneDate(dateString) {
@@ -48,10 +84,16 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
 
   const {
     merchant = "Händler",
+    orderType = "physical",
     orderId,
     trackingNumber,
     carrier,
     productSummary,
+    amount,
+    paymentProvider,
+    transactionId,
+    eventDate,
+    venue,
     currentStage = "ordered",
     statusTitle,
     statusDetail,
@@ -61,8 +103,8 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
   } = orderJourney;
 
   const trackingUrl = getTrackingUrl(carrier, trackingNumber);
+  const HeaderIcon = getHeaderIcon(orderType);
 
-  // If no milestones array exists, synthesize at least 1 current step
   const nodes = milestones.length > 0 ? milestones : [
     {
       id: "milestone_default",
@@ -75,32 +117,47 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
 
   return (
     <div className="mx-4 my-3 rounded-xl border bg-card p-4.5 shadow-2xs space-y-4 text-xs text-foreground transition-all">
-      {/* 1. Header: Merchant, Product & Current Status */}
+      {/* 1. Header: Type Badge, Product/Event Summary, Payment & Status */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3.5">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20 shrink-0 shadow-2xs">
-            <Package className="h-4 w-4" />
+            <HeaderIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-xs sm:text-sm text-foreground truncate">
-                {productSummary || "Bestell- & Lieferverlauf"}
+                {productSummary || (orderType === "ticket" ? "Event / Ticket" : "Bestell- & Zahlungsverlauf")}
               </span>
               {merchant && (
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 font-medium border-border/80">
                   {merchant}
                 </Badge>
               )}
+              {orderType === "ticket" && (
+                <span className="inline-flex items-center gap-1 rounded bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 px-1.5 py-0.2 text-[10px] font-semibold">
+                  <Ticket className="h-2.5 w-2.5" />
+                  Ticket
+                </span>
+              )}
             </div>
-            {orderId && (
-              <p className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">
-                Bestell-Nr.: <span className="text-foreground/90 select-all">{orderId}</span>
-              </p>
-            )}
+
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-[11px] text-muted-foreground font-mono">
+              {orderId && (
+                <span>
+                  Nr.: <span className="text-foreground/90 select-all">{orderId}</span>
+                </span>
+              )}
+              {paymentProvider && (
+                <span className="inline-flex items-center gap-1 text-foreground/85">
+                  <CreditCard className="h-3 w-3 text-primary" />
+                  {paymentProvider} {amount ? `(${amount})` : ""}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Current status pill & tracking button */}
+        {/* Current status pill & tracking/ticket button */}
         <div className="flex items-center gap-2 shrink-0">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/25 px-3 py-1 text-xs font-semibold text-primary shadow-2xs">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
@@ -139,7 +196,7 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
             const isClickable = Boolean(milestone.mailId);
             const isSelected = activeMailId && String(activeMailId) === String(milestone.mailId);
 
-            const IconComp = getMilestoneIcon(milestone.stage);
+            const IconComp = getMilestoneIcon(milestone.stage, orderType);
             const isLast = idx === nodes.length - 1;
 
             return (
@@ -156,7 +213,11 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
                   <div
                     className={cn(
                       "absolute top-4 left-[50%] right-[-50%] h-[2px] z-0 transition-colors",
-                      isCompleted ? "bg-emerald-500 dark:bg-emerald-500" : isCurrent ? "bg-gradient-to-r from-primary to-border" : "border-t border-dashed border-border"
+                      isCompleted
+                        ? "bg-emerald-500 dark:bg-emerald-500"
+                        : isCurrent
+                        ? "bg-gradient-to-r from-primary to-border"
+                        : "border-t border-dashed border-border"
                     )}
                   />
                 )}
@@ -194,7 +255,7 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
                   {milestone.title}
                 </span>
 
-                {/* Date */}
+                {/* Date / Detail */}
                 {milestone.date ? (
                   <span className="text-[10px] text-muted-foreground mt-0.5 font-mono whitespace-nowrap">
                     {formatMilestoneDate(milestone.date)}
@@ -205,7 +266,12 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
                   </span>
                 ) : null}
 
-                {/* Detail pill on hover or active */}
+                {/* Amount or Location pill */}
+                {milestone.amount && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] text-primary mt-1 bg-primary/10 px-1.5 py-0.2 rounded font-mono font-medium">
+                    {milestone.amount}
+                  </span>
+                )}
                 {milestone.location && (
                   <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600 dark:text-emerald-400 mt-1 bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/20">
                     <MapPin className="h-2.5 w-2.5" />
@@ -218,9 +284,23 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
         </div>
       </div>
 
-      {/* 3. Meta Footer Info Bar */}
+      {/* 3. Meta Footer Info Bar: Event Date / Venue / Carrier / Payment details */}
       <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-muted-foreground pt-2.5 border-t bg-muted/20 -mx-4.5 -mb-4.5 px-4.5 py-2.5 rounded-b-xl">
         <div className="flex flex-wrap items-center gap-3">
+          {eventDate && (
+            <span className="flex items-center gap-1 text-foreground/90 font-medium">
+              <Calendar className="h-3 w-3 text-primary" />
+              Event: {eventDate}
+            </span>
+          )}
+
+          {venue && (
+            <span className="flex items-center gap-1 text-foreground/90 font-medium">
+              <MapPin className="h-3 w-3 text-primary" />
+              {venue}
+            </span>
+          )}
+
           {carrier && trackingNumber && (
             <span className="font-mono">
               <strong className="text-foreground">{carrier}:</strong> {trackingNumber}
@@ -234,16 +314,16 @@ export function OrderTimelineCard({ orderJourney, onSelectMail, activeMailId }) 
             </span>
           )}
 
-          {deliveryLocation && (
-            <span className="flex items-center gap-1 text-foreground/90 font-medium">
-              <MapPin className="h-3 w-3 text-primary" />
-              Ort: {deliveryLocation}
+          {amount && !eventDate && (
+            <span className="flex items-center gap-1 text-foreground/90 font-mono font-medium">
+              <CreditCard className="h-3 w-3 text-primary" />
+              Betrag: {amount} {paymentProvider ? `(${paymentProvider})` : ""}
             </span>
           )}
         </div>
 
         <span className="text-[10px] text-muted-foreground/70">
-          {nodes.filter((n) => n.mailId).length} E-Mails in diesem Ablauf verknüpft
+          {nodes.filter((n) => n.mailId).length} E-Mails (inkl. Zahlungsbelege) verknüpft
         </span>
       </div>
     </div>

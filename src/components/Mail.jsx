@@ -370,6 +370,10 @@ export function Mail({
           const matchMerchant = thread.orderJourney?.merchant?.toLowerCase().includes(q);
           const matchOrder = thread.orderJourney?.orderId?.toLowerCase().includes(q);
           const matchTracking = thread.orderJourney?.trackingNumber?.toLowerCase().includes(q);
+          const matchPayment = thread.orderJourney?.paymentProvider?.toLowerCase().includes(q);
+          const matchVenue = thread.orderJourney?.venue?.toLowerCase().includes(q);
+          const matchEvent = thread.orderJourney?.eventDate?.toLowerCase().includes(q);
+          const matchAmount = thread.orderJourney?.amount?.toLowerCase().includes(q);
           return (
             matchSubject ||
             matchName ||
@@ -379,7 +383,11 @@ export function Mail({
             matchProduct ||
             matchMerchant ||
             matchOrder ||
-            matchTracking
+            matchTracking ||
+            matchPayment ||
+            matchVenue ||
+            matchEvent ||
+            matchAmount
           );
         });
         if (!match) return false;

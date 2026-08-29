@@ -1,13 +1,25 @@
+export interface PaymentInfo {
+  isPaymentReceipt: boolean;
+  provider?: "PayPal" | "Klarna" | "Stripe" | "Apple Pay" | "Google Pay" | "Kreditkarte" | "Banküberweisung" | string | null;
+  paidTo?: string | null;
+  amount?: string | null;
+  transactionId?: string | null;
+}
+
 export interface OrderInfo {
   isOrder: boolean;
+  orderType?: "physical" | "digital" | "ticket" | "booking" | "subscription" | "service" | string | null;
   merchant?: string | null;
   orderId?: string | null;
   trackingNumber?: string | null;
   carrier?: string | null;
   productSummary?: string | null;
+  amount?: string | null;
   stage?:
     | "ordered"
     | "payment_confirmed"
+    | "tickets_issued"
+    | "digital_delivered"
     | "shipped"
     | "out_for_delivery"
     | "delivered"
@@ -20,6 +32,8 @@ export interface OrderInfo {
     | null;
   statusTitle?: string | null;
   statusDetail?: string | null;
+  eventDate?: string | null;
+  venue?: string | null;
   deliveryLocation?: string | null;
   estimatedDelivery?: string | null;
 }
@@ -33,6 +47,7 @@ export interface AiAnalysisResult {
     due?: string | null;
     completed?: boolean;
   }[];
+  paymentInfo?: PaymentInfo | null;
   orderInfo?: OrderInfo | null;
   timestamp: number;
   _debug?: {

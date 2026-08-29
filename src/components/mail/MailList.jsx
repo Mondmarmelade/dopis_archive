@@ -12,6 +12,8 @@ import {
   Truck,
   RotateCcw,
   ShoppingBag,
+  Ticket,
+  CreditCard,
 } from "lucide-react";
 import { useAiQueue } from "@/lib/aiQueue";
 import { getStageLabel } from "@/lib/threadEngine";
@@ -126,10 +128,25 @@ export function MailList({ items = [], selectedMailId, onSelectMail }) {
               isUnread && "font-medium"
             )}
           >
-            {/* Avatar or Order Icon */}
+            {/* Avatar, Ticket, Payment or Order Icon */}
             {isOrder ? (
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">
-                <Package className="h-4 w-4" />
+              <div
+                className={cn(
+                  "flex h-9 w-9 items-center justify-center rounded-lg border shrink-0 mt-0.5 shadow-2xs",
+                  order.orderType === "ticket"
+                    ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                    : order.paymentProvider && !order.carrier
+                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                    : "bg-primary/10 text-primary border-primary/20"
+                )}
+              >
+                {order.orderType === "ticket" ? (
+                  <Ticket className="h-4 w-4" />
+                ) : order.paymentProvider && !order.carrier ? (
+                  <CreditCard className="h-4 w-4" />
+                ) : (
+                  <Package className="h-4 w-4" />
+                )}
               </div>
             ) : (
               <SenderAvatar email={latestMail.email} size="md" className="mt-0.5 shrink-0" />
@@ -148,7 +165,9 @@ export function MailList({ items = [], selectedMailId, onSelectMail }) {
                   {/* Thread Counter Badge */}
                   {mailCount > 1 && (
                     <span className="inline-flex items-center gap-0.5 rounded-full bg-muted border px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground shrink-0">
-                      {isOrder ? (
+                      {order.orderType === "ticket" ? (
+                        <Ticket className="h-2.5 w-2.5 text-purple-600 dark:text-purple-400" />
+                      ) : isOrder ? (
                         <Package className="h-2.5 w-2.5 text-primary" />
                       ) : (
                         <Layers className="h-2.5 w-2.5" />

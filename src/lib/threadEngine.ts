@@ -1,4 +1,9 @@
-import { getCachedAnalysis, type AiAnalysisResult, type OrderInfo } from "./aiCache";
+import {
+  getCachedAnalysis,
+  type AiAnalysisResult,
+  type OrderInfo,
+  type PaymentInfo,
+} from "./aiCache";
 
 export type MilestoneStatus = "completed" | "current" | "pending";
 
@@ -15,14 +20,22 @@ export interface TimelineMilestone {
   carrier?: string | null;
   trackingNumber?: string | null;
   location?: string | null;
+  provider?: string | null;
+  amount?: string | null;
 }
 
 export interface OrderJourney {
   merchant?: string | null;
+  orderType: "physical" | "digital" | "ticket" | "booking" | "subscription" | "service";
   orderId?: string | null;
   trackingNumber?: string | null;
   carrier?: string | null;
   productSummary?: string | null;
+  amount?: string | null;
+  paymentProvider?: string | null;
+  transactionId?: string | null;
+  eventDate?: string | null;
+  venue?: string | null;
   currentStage: string;
   statusTitle?: string | null;
   statusDetail?: string | null;
@@ -49,22 +62,28 @@ export interface ThreadItem {
 const STAGE_ORDER: Record<string, number> = {
   ordered: 1,
   payment_confirmed: 2,
-  shipped: 3,
-  out_for_delivery: 4,
-  delivered: 5,
-  return_initiated: 6,
-  return_dropped: 7,
-  returned: 8,
-  refunded: 9,
-  cancelled: 10,
+  tickets_issued: 3,
+  digital_delivered: 4,
+  shipped: 5,
+  out_for_delivery: 6,
+  delivered: 7,
+  return_initiated: 8,
+  return_dropped: 9,
+  returned: 10,
+  refunded: 11,
+  cancelled: 12,
 };
 
 export function getStageLabel(stage: string): string {
   switch (stage?.toLowerCase()) {
     case "ordered":
-      return "Bestellt";
+      return "Bestellt / Gebucht";
     case "payment_confirmed":
-      return "Rechnung / Bezahlt";
+      return "Zahlung verbucht";
+    case "tickets_issued":
+      return "Tickets bereit";
+    case "digital_delivered":
+      return "Bereitgestellt";
     case "shipped":
       return "Versendet";
     case "out_for_delivery":
@@ -86,12 +105,20 @@ export function getStageLabel(stage: string): string {
   }
 }
 
-export function getDefaultMilestoneTitle(stage: string): string {
+export function getDefaultMilestoneTitle(stage: string, orderType: string = "physical", provider?: string | null): string {
   switch (stage?.toLowerCase()) {
     case "ordered":
-      return "Bestellung bestätigt";
+      return orderType === "ticket"
+        ? "Ticket-Bestellung bestätigt"
+        : orderType === "booking"
+        ? "Buchung bestätigt"
+        : "Bestellung bestätigt";
     case "payment_confirmed":
-      return "Rechnung / Zahlung verbucht";
+      return provider ? `Zahlung via ${provider} verbucht` : "Zahlung bestätigt";
+    case "tickets_issued":
+      return "E-Tickets & Barcode bereitgestellt";
+    case "digital_delivered":
+      return "Digitales Produkt / Zugang freigeschaltet";
     case "shipped":
       return "Paket verschickt";
     case "out_for_delivery":
@@ -105,7 +132,7 @@ export function getDefaultMilestoneTitle(stage: string): string {
     case "returned":
       return "Im Lager eingetroffen";
     case "refunded":
-      return "Gutschrift / Erstattung erfolgt";
+      return "Gutschrift / Erstattung verbucht";
     case "cancelled":
       return "Bestellung storniert";
     default:
@@ -159,7 +186,18 @@ export function normalizeSubject(subject: string = ""): string {
 }
 
 /**
- * Groups an array of emails into conversation threads and smart order threads.
+ * Normalizes merchant names (e.g. "CTS Eventim AG & Co. KGaA" -> "eventim")
+ */
+export function normalizeMerchant(name: string = ""): string {
+  if (!name) return "";
+  let clean = name.toLowerCase().trim();
+  clean = clean.replace(/\b(ag|gmbh|co|kgaa|inc|corp|ltd|llc|bv|se|sa|de|com)\b/g, "").trim();
+  clean = clean.replace(/[^a-z0-9]/g, "");
+  return clean;
+}
+
+/**
+ * Groups an array of emails into conversation threads, smart order journeys, and payment provider threads.
  */
 export function groupMailsIntoThreads(
   mails: any[] = [],
@@ -186,20 +224,24 @@ export function groupMailsIntoThreads(
   const subjectGroups = new Map<string, typeof enrichedMails>();
   const processedMailIds = new Set<string | number>();
 
-  // 2. Identify and group Order / Shipping Emails
+  // 2. Identify Order / Shipping / Ticket / Payment Emails
+  // First, extract all direct orders with IDs or Tracking numbers
   for (const mail of enrichedMails) {
     const orderInfo = mail._ai?.orderInfo;
-    if (orderInfo && orderInfo.isOrder) {
+    const paymentInfo = mail._ai?.paymentInfo;
+
+    if (orderInfo && (orderInfo.isOrder || orderInfo.orderType)) {
       let orderKey: string | null = null;
+      const merchantNorm = normalizeMerchant(orderInfo.merchant || "");
 
       if (orderInfo.orderId && orderInfo.orderId.length > 3) {
-        orderKey = `order:id:${orderInfo.merchant || "shop"}:${orderInfo.orderId.toLowerCase().trim()}`;
+        orderKey = `order:id:${merchantNorm || "shop"}:${orderInfo.orderId.toLowerCase().trim()}`;
       } else if (orderInfo.trackingNumber && orderInfo.trackingNumber.length > 4) {
         orderKey = `order:track:${orderInfo.carrier || "carrier"}:${orderInfo.trackingNumber.toLowerCase().trim()}`;
-      } else if (orderInfo.merchant && orderInfo.productSummary) {
+      } else if (merchantNorm && orderInfo.productSummary) {
         // Approximate matching by merchant + short product signature
         const prodSig = orderInfo.productSummary.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
-        orderKey = `order:prod:${orderInfo.merchant.toLowerCase().trim()}:${prodSig}`;
+        orderKey = `order:prod:${merchantNorm}:${prodSig}`;
       }
 
       if (orderKey) {
@@ -212,7 +254,64 @@ export function groupMailsIntoThreads(
     }
   }
 
-  // 3. Group remaining emails by normalized subject / conversation
+  // 3. Second pass for Payment Provider Receipts (PayPal, Klarna, Stripe, etc.)
+  // Match payment receipts against existing orders by merchant & timeframe or group them by transaction
+  for (const mail of enrichedMails) {
+    if (processedMailIds.has(mail._id)) continue;
+
+    const paymentInfo = mail._ai?.paymentInfo;
+    const orderInfo = mail._ai?.orderInfo;
+
+    if (paymentInfo && paymentInfo.isPaymentReceipt) {
+      const paidToNorm = normalizeMerchant(paymentInfo.paidTo || "");
+      let matchedGroupKey: string | null = null;
+
+      // Check if we already have an order group matching this merchant within +/- 48h
+      if (paidToNorm) {
+        for (const [groupKey, groupMails] of orderGroups.entries()) {
+          const groupHasMatchingMerchant = groupMails.some((m) => {
+            const mNorm = normalizeMerchant(m._ai?.orderInfo?.merchant || "");
+            const mSubj = (m.subject || "").toLowerCase();
+            return (
+              mNorm.includes(paidToNorm) ||
+              paidToNorm.includes(mNorm) ||
+              mSubj.includes(paidToNorm)
+            );
+          });
+
+          if (groupHasMatchingMerchant) {
+            // Check time proximity (e.g. within 72 hours)
+            const mailTime = mail._dateObj.getTime();
+            const isNearInTime = groupMails.some(
+              (m) => Math.abs(m._dateObj.getTime() - mailTime) < 72 * 60 * 60 * 1000
+            );
+
+            if (isNearInTime) {
+              matchedGroupKey = groupKey;
+              break;
+            }
+          }
+        }
+      }
+
+      if (matchedGroupKey) {
+        orderGroups.get(matchedGroupKey)!.push(mail);
+        processedMailIds.add(mail._id);
+      } else if (paymentInfo.transactionId || paidToNorm) {
+        // Group as a standalone payment receipt thread
+        const payKey = paymentInfo.transactionId
+          ? `pay:tx:${paymentInfo.transactionId}`
+          : `pay:to:${paidToNorm}:${mail._dateObj.toISOString().slice(0, 10)}`;
+        if (!orderGroups.has(payKey)) {
+          orderGroups.set(payKey, []);
+        }
+        orderGroups.get(payKey)!.push(mail);
+        processedMailIds.add(mail._id);
+      }
+    }
+  }
+
+  // 4. Group remaining emails by normalized subject / conversation
   for (const mail of enrichedMails) {
     if (processedMailIds.has(mail._id)) continue;
 
@@ -254,10 +353,16 @@ export function groupMailsIntoThreads(
 
     if (isOrder) {
       let merchant: string | null = null;
+      let orderType: OrderJourney["orderType"] = "physical";
       let orderId: string | null = null;
       let trackingNumber: string | null = null;
       let carrier: string | null = null;
       let productSummary: string | null = null;
+      let amount: string | null = null;
+      let paymentProvider: string | null = null;
+      let transactionId: string | null = null;
+      let eventDate: string | null = null;
+      let venue: string | null = null;
       let estimatedDelivery: string | null = null;
       let deliveryLocation: string | null = null;
       let statusTitle: string | null = null;
@@ -272,12 +377,19 @@ export function groupMailsIntoThreads(
       for (let i = 0; i < chronological.length; i++) {
         const m = chronological[i];
         const o = m._ai?.orderInfo;
+        const p = m._ai?.paymentInfo;
+
+        // Extract metadata from orderInfo
         if (o) {
           if (!merchant && o.merchant) merchant = o.merchant;
+          if (o.orderType) orderType = o.orderType as any;
           if (!orderId && o.orderId) orderId = o.orderId;
           if (!trackingNumber && o.trackingNumber) trackingNumber = o.trackingNumber;
           if (!carrier && o.carrier) carrier = o.carrier;
           if (!productSummary && o.productSummary) productSummary = o.productSummary;
+          if (!amount && o.amount) amount = o.amount;
+          if (!eventDate && o.eventDate) eventDate = o.eventDate;
+          if (!venue && o.venue) venue = o.venue;
           if (o.estimatedDelivery) estimatedDelivery = o.estimatedDelivery;
           if (o.deliveryLocation) deliveryLocation = o.deliveryLocation;
           if (o.statusTitle) statusTitle = o.statusTitle;
@@ -293,17 +405,64 @@ export function groupMailsIntoThreads(
           rawMilestones.push({
             id: `milestone_${m._id}`,
             stage: stage,
-            title: o.statusTitle || getDefaultMilestoneTitle(stage),
-            detail: o.statusDetail || o.deliveryLocation || (o.carrier ? `${o.carrier} ${o.trackingNumber || ""}` : null),
+            title: o.statusTitle || getDefaultMilestoneTitle(stage, orderType, paymentProvider),
+            detail:
+              o.statusDetail ||
+              o.venue ||
+              o.eventDate ||
+              o.deliveryLocation ||
+              (o.carrier ? `${o.carrier} ${o.trackingNumber || ""}` : null),
             date: m.date,
             mailId: m._id,
             mailSubject: m.subject || "(Kein Betreff)",
             status: "completed",
             carrier: o.carrier,
             trackingNumber: o.trackingNumber,
-            location: o.deliveryLocation,
+            location: o.deliveryLocation || o.venue,
+            amount: o.amount,
           });
         }
+
+        // Extract payment metadata
+        if (p && p.isPaymentReceipt) {
+          if (!merchant && p.paidTo) merchant = p.paidTo;
+          if (!paymentProvider && p.provider) paymentProvider = p.provider;
+          if (!amount && p.amount) amount = p.amount;
+          if (!transactionId && p.transactionId) transactionId = p.transactionId;
+
+          // If no order milestone was added for this specific email, add a payment milestone
+          const alreadyAdded = rawMilestones.some((ms) => String(ms.mailId) === String(m._id));
+          if (!alreadyAdded) {
+            rawMilestones.push({
+              id: `milestone_pay_${m._id}`,
+              stage: "payment_confirmed",
+              title: p.provider ? `Zahlung via ${p.provider} autorisiert` : "Zahlungsbeleg erhalten",
+              detail: p.amount ? `Betrag: ${p.amount}${p.paidTo ? ` an ${p.paidTo}` : ""}` : p.paidTo,
+              date: m.date,
+              mailId: m._id,
+              mailSubject: m.subject || "(Zahlungsbestätigung)",
+              status: "completed",
+              provider: p.provider,
+              amount: p.amount,
+            });
+          }
+        }
+      }
+
+      // Check if ticket keywords appear in product summary or merchant
+      const summaryLower = (productSummary || "").toLowerCase();
+      const merchantLower = (merchant || "").toLowerCase();
+      if (
+        summaryLower.includes("ticket") ||
+        summaryLower.includes("konzert") ||
+        summaryLower.includes("festival") ||
+        summaryLower.includes("event") ||
+        summaryLower.includes("eintritt") ||
+        merchantLower.includes("eventim") ||
+        merchantLower.includes("ticketmaster") ||
+        merchantLower.includes("bahn")
+      ) {
+        orderType = "ticket";
       }
 
       // Mark the latest milestone in the chain as "current"
@@ -311,19 +470,41 @@ export function groupMailsIntoThreads(
         rawMilestones[rawMilestones.length - 1].status = "current";
       }
 
-      // If the latest state is still in transit (ordered/shipped/out_for_delivery), append a dynamic pending "Zustellung" milestone
-      const isDelivered = rawMilestones.some((ms) => ms.stage === "delivered");
-      const isReturned = rawMilestones.some((ms) => ms.stage === "refunded" || ms.stage === "returned");
-      const isCancelled = rawMilestones.some((ms) => ms.stage === "cancelled");
+      // Dynamic predicted milestone for physical in-transit orders
+      if (orderType === "physical") {
+        const isDelivered = rawMilestones.some((ms) => ms.stage === "delivered");
+        const isReturned = rawMilestones.some((ms) => ms.stage === "refunded" || ms.stage === "returned");
+        const isCancelled = rawMilestones.some((ms) => ms.stage === "cancelled");
 
-      if (!isDelivered && !isReturned && !isCancelled) {
-        const lastStage = rawMilestones[rawMilestones.length - 1]?.stage;
-        if (lastStage === "ordered" || lastStage === "shipped" || lastStage === "out_for_delivery" || lastStage === "payment_confirmed") {
+        if (!isDelivered && !isReturned && !isCancelled) {
+          const lastStage = rawMilestones[rawMilestones.length - 1]?.stage;
+          if (
+            lastStage === "ordered" ||
+            lastStage === "shipped" ||
+            lastStage === "out_for_delivery" ||
+            lastStage === "payment_confirmed"
+          ) {
+            rawMilestones.push({
+              id: `milestone_predicted_delivery`,
+              stage: "delivered",
+              title: "Zustellung",
+              detail: estimatedDelivery ? `Voraussichtlich: ${estimatedDelivery}` : "Wird zugestellt",
+              date: null,
+              mailId: null,
+              status: "pending",
+              isPredicted: true,
+            });
+          }
+        }
+      } else if (orderType === "ticket") {
+        // For ticket bookings: if order is placed & paid but tickets not yet marked issued, add pending tickets node
+        const hasTicketsIssued = rawMilestones.some((ms) => ms.stage === "tickets_issued");
+        if (!hasTicketsIssued) {
           rawMilestones.push({
-            id: `milestone_predicted_delivery`,
-            stage: "delivered",
-            title: "Zustellung",
-            detail: estimatedDelivery ? `Voraussichtlich: ${estimatedDelivery}` : "Wird zugestellt",
+            id: `milestone_predicted_tickets`,
+            stage: "tickets_issued",
+            title: "Tickets & Einlass",
+            detail: eventDate ? `Event am ${eventDate}` : "Bereitstellung vor Event",
             date: null,
             mailId: null,
             status: "pending",
@@ -333,7 +514,9 @@ export function groupMailsIntoThreads(
       }
 
       // If return is initiated but not yet refunded, append pending "Erstattung"
-      const isReturnInitiated = rawMilestones.some((ms) => ms.stage === "return_initiated" || ms.stage === "return_dropped" || ms.stage === "returned");
+      const isReturnInitiated = rawMilestones.some(
+        (ms) => ms.stage === "return_initiated" || ms.stage === "return_dropped" || ms.stage === "returned"
+      );
       const isRefunded = rawMilestones.some((ms) => ms.stage === "refunded");
       if (isReturnInitiated && !isRefunded) {
         rawMilestones.push({
@@ -349,11 +532,17 @@ export function groupMailsIntoThreads(
       }
 
       orderJourney = {
-        merchant: merchant || "Bestellung",
+        merchant: merchant || (paymentProvider ? `Zahlung ${paymentProvider}` : "Bestellung"),
+        orderType,
         orderId,
         trackingNumber,
         carrier,
-        productSummary,
+        productSummary: productSummary || (paymentProvider && amount ? `Zahlung über ${amount}` : null),
+        amount,
+        paymentProvider,
+        transactionId,
+        eventDate,
+        venue,
         currentStage,
         statusTitle,
         statusDetail,
@@ -378,7 +567,7 @@ export function groupMailsIntoThreads(
     };
   };
 
-  // Build order threads
+  // Build order & payment threads
   for (const [key, group] of orderGroups.entries()) {
     resultThreads.push(buildThread(`thread_${key}`, group, true));
   }
