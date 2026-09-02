@@ -59,6 +59,7 @@ export async function GET({ cookies, params, request }) {
       })) {
         const fromItem = msg.envelope?.from?.[0];
         const isRead = msg.flags ? msg.flags.has("\\Seen") : false;
+        const isFlagged = msg.flags ? msg.flags.has("\\Flagged") : false;
 
         msgs.push({
           id: String(msg.seq),
@@ -69,6 +70,7 @@ export async function GET({ cookies, params, request }) {
           subject: msg.envelope?.subject || "(No Subject)",
           date: msg.envelope?.date ? new Date(msg.envelope.date).toISOString() : new Date().toISOString(),
           read: isRead,
+          flagged: isFlagged,
           envelope: msg.envelope,
           flags: msg.flags ? Array.from(msg.flags) : [],
         });

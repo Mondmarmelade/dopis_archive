@@ -33,6 +33,7 @@ import { AiInsightsCard } from "./AiInsightsCard";
 import { OrderTimelineCard } from "./OrderTimelineCard";
 import { SenderAvatar } from "./SenderAvatar";
 import { cn } from "@/lib/utils";
+import { getCachedEmail, fetchEmailDetail } from "@/lib/emailCache";
 
 let isHookAdded = false;
 
@@ -89,6 +90,7 @@ export function MailDisplay({
   isRead,
   onToggleRead,
   onMoveToTrash,
+  onArchive,
   currentFolder = "inbox",
   aiAnalysis,
   aiLoading,
@@ -100,37 +102,32 @@ export function MailDisplay({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showThreadStream, setShowThreadStream] = useState(true);
-  const detailCache = useRef({});
 
   useEffect(() => {
     if (!selectedMailId) {
       setDetail(null);
       setError(null);
+      setLoading(false);
       return;
     }
 
-    const cacheKey = `${selectedMailId}_${currentFolder}`;
-    if (detailCache.current[cacheKey]) {
-      setDetail(detailCache.current[cacheKey]);
+    const cached = getCachedEmail(selectedMailId, currentFolder);
+    if (cached) {
+      setDetail(cached);
       setLoading(false);
       setError(null);
       return;
     }
 
-    let isMounted = true;
+    // Set detail to null to prevent displaying previous email's body, but keep optimistic UI
+    setDetail(null);
     setLoading(true);
     setError(null);
 
-    fetch(`/api/email?seq=${selectedMailId}&folder=${currentFolder}`)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`Fehler beim Laden der E-Mail (${res.status})`);
-        }
-        return res.json();
-      })
+    let isMounted = true;
+    fetchEmailDetail(selectedMailId, currentFolder)
       .then((data) => {
         if (isMounted) {
-          detailCache.current[cacheKey] = data;
           setDetail(data);
           setLoading(false);
         }
@@ -178,7 +175,12 @@ export function MailDisplay({
         <div className="flex items-center gap-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onArchive && selectedMailId && onArchive(selectedMailId)}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
                 <Archive className="h-4 w-4" />
                 <span className="sr-only">Archivieren</span>
               </Button>
@@ -290,179 +292,189 @@ export function MailDisplay({
         </div>
       </div>
 
-      {/* Main Mail content */}
-      {loading ? (
-        <div className="flex flex-1 flex-col items-center justify-center p-8 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          <p className="mt-3 text-xs">E-Mail-Inhalt wird geladen...</p>
-        </div>
-      ) : error ? (
-        <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-destructive">
-          <p className="text-sm font-medium">E-Mail konnte nicht geladen werden</p>
-          <p className="mt-1 text-xs text-muted-foreground">{error}</p>
-        </div>
-      ) : (
-        <div className="flex flex-1 flex-col overflow-y-auto">
-          {/* 1. Smart Order / Package Journey Stepper Card (if Order Thread) */}
-          {thread?.isOrderThread && thread.orderJourney && (
-            <OrderTimelineCard
-              orderJourney={thread.orderJourney}
-              onSelectMail={(targetId) => onSelectMailInThread && onSelectMailInThread(targetId)}
-              activeMailId={selectedMailId}
-            />
-          )}
+      {/* Main Mail content - Always renders shell immediately (optimistic UI) */}
+      <div className="flex flex-1 flex-col overflow-y-auto">
+        {/* 1. Smart Order / Package Journey Stepper Card (if Order Thread) */}
+        {thread?.isOrderThread && thread.orderJourney && (
+          <OrderTimelineCard
+            orderJourney={thread.orderJourney}
+            onSelectMail={(targetId) => onSelectMailInThread && onSelectMailInThread(targetId)}
+            activeMailId={selectedMailId}
+          />
+        )}
 
-          {/* 2. Thread Conversation Stream Switcher (if thread has multiple mails) */}
-          {isMultiMailThread && (
-            <div className="mx-4 my-2 rounded-lg border bg-muted/30 p-3 text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-medium text-foreground">
-                  <Layers className="h-3.5 w-3.5 text-primary" />
-                  <span>Verlauf dieser Konversation ({threadMails.length} Nachrichten)</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowThreadStream(!showThreadStream)}
-                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
-                >
-                  <span>{showThreadStream ? "Einklappen" : "Ausklappen"}</span>
-                  {showThreadStream ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                </button>
+        {/* 2. Thread Conversation Stream Switcher (if thread has multiple mails) */}
+        {isMultiMailThread && (
+          <div className="mx-4 my-2 rounded-lg border bg-muted/30 p-3 text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 font-medium text-foreground">
+                <Layers className="h-3.5 w-3.5 text-primary" />
+                <span>Verlauf dieser Konversation ({threadMails.length} Nachrichten)</span>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowThreadStream(!showThreadStream)}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <span>{showThreadStream ? "Einklappen" : "Ausklappen"}</span>
+                {showThreadStream ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+            </div>
 
-              {showThreadStream && (
-                <div className="flex flex-col gap-1.5 pt-1">
-                  {threadMails.map((m) => {
-                    const mailId = m.id || m.seq;
-                    const isCurrent = String(mailId) === String(selectedMailId);
-                    return (
-                      <div
-                        key={mailId}
-                        onClick={() => onSelectMailInThread && onSelectMailInThread(mailId)}
-                        className={cn(
-                          "flex items-center justify-between gap-3 p-2 rounded-md border text-xs transition-all cursor-pointer",
-                          isCurrent
-                            ? "bg-background border-primary/40 shadow-2xs font-semibold"
-                            : "bg-background/60 border-border hover:bg-background text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <SenderAvatar email={m.email || m.from?.address} size="sm" />
-                          <div className="min-w-0">
-                            <span className="text-foreground truncate block">
-                              {m.name || m.from?.name || m.email || "Unbekannt"}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground truncate block">
-                              {m.subject || "(Kein Betreff)"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          {isCurrent && (
-                            <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-medium">
-                              Aktuell
-                            </span>
-                          )}
-                          <span className="text-[11px] text-muted-foreground font-mono">
-                            {formatShortDate(m.date)}
+            {showThreadStream && (
+              <div className="flex flex-col gap-1.5 pt-1">
+                {threadMails.map((m) => {
+                  const mailId = m.id || m.seq;
+                  const isCurrent = String(mailId) === String(selectedMailId);
+                  return (
+                    <div
+                      key={mailId}
+                      onClick={() => onSelectMailInThread && onSelectMailInThread(mailId)}
+                      className={cn(
+                        "flex items-center justify-between gap-3 p-2 rounded-md border text-xs transition-all cursor-pointer",
+                        isCurrent
+                          ? "bg-background border-primary/40 shadow-2xs font-semibold"
+                          : "bg-background/60 border-border hover:bg-background text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <SenderAvatar email={m.email || m.from?.address} size="sm" />
+                        <div className="min-w-0">
+                          <span className="text-foreground truncate block">
+                            {m.name || m.from?.name || m.email || "Unbekannt"}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground truncate block">
+                            {m.subject || "(Kein Betreff)"}
                           </span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
 
-          {/* 3. Header section for currently active email in thread */}
-          <div className="flex items-start gap-4 p-5 pb-3">
-            <SenderAvatar
-              name={senderName}
-              email={senderEmail}
-              size="lg"
-            />
-
-            <div className="grid gap-1 flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <div className="font-semibold text-sm text-foreground truncate">
-                  {senderName}
-                </div>
-                {dateStr && (
-                  <div className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatFullDate(dateStr)}
-                  </div>
-                )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isCurrent && (
+                          <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-medium">
+                            Aktuell
+                          </span>
+                        )}
+                        <span className="text-[11px] text-muted-foreground font-mono">
+                          {formatShortDate(m.date)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="text-xs text-muted-foreground truncate">
-                {senderEmail}
-              </div>
-              {detail?.to && detail.to.length > 0 && (
-                <div className="text-xs text-muted-foreground/80 truncate">
-                  an {detail.to.map((t) => t.name || t.address).join(", ")}
-                </div>
-              )}
-            </div>
+            )}
           </div>
+        )}
 
-          <Separator />
-
-          {/* Subject heading */}
-          <div className="px-5 py-3">
-            <h2 className="text-base font-bold tracking-tight text-foreground break-words">
-              {subject}
-            </h2>
-          </div>
-
-          {/* 4. AI Insights Card (Summary, Action Items, Tags) */}
-          <AiInsightsCard
-            analysis={aiAnalysis}
-            loading={aiLoading}
-            error={aiError}
-            onReanalyze={onReanalyze}
-            onToggleActionItem={onToggleActionItem}
+        {/* 3. Header section for currently active email in thread */}
+        <div className="flex items-start gap-4 p-5 pb-3">
+          <SenderAvatar
+            name={senderName}
+            email={senderEmail}
+            size="lg"
           />
 
-          <Separator />
-
-          {/* Attachments if any */}
-          {detail?.attachments && detail.attachments.length > 0 && (
-            <div className="bg-muted/40 px-5 py-2.5 border-b flex flex-wrap gap-2 items-center text-xs">
-              <span className="flex items-center gap-1 font-medium text-muted-foreground">
-                <Paperclip className="h-3.5 w-3.5" />
-                Anhänge ({detail.attachments.length}):
-              </span>
-              {detail.attachments.map((att, idx) => (
-                <span
-                  key={idx}
-                  className="inline-flex items-center gap-1 rounded bg-background border px-2 py-0.5 text-xs text-foreground font-mono"
-                >
-                  {att.filename || `Anhang-${idx + 1}`}
-                </span>
-              ))}
+          <div className="grid gap-1 flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold text-sm text-foreground truncate">
+                {senderName}
+              </div>
+              {dateStr && (
+                <div className="text-xs text-muted-foreground whitespace-nowrap">
+                  {formatFullDate(dateStr)}
+                </div>
+              )}
             </div>
-          )}
-
-          {/* Email Body */}
-          <div className="flex-1 p-5 overflow-x-auto text-sm text-foreground leading-relaxed">
-            {detail?.html ? (
-              <div
-                className="prose prose-sm max-w-none dark:prose-invert [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_table]:border-collapse"
-                dangerouslySetInnerHTML={{
-                  __html: sanitizeEmailHtml(detail.html),
-                }}
-              />
-            ) : detail?.text ? (
-              <pre className="font-sans whitespace-pre-wrap break-words text-sm text-foreground">
-                {detail.text}
-              </pre>
-            ) : (
-              <p className="italic text-muted-foreground text-xs">Diese E-Mail hat keinen Textinhalt.</p>
+            <div className="text-xs text-muted-foreground truncate">
+              {senderEmail}
+            </div>
+            {detail?.to && detail.to.length > 0 && (
+              <div className="text-xs text-muted-foreground/80 truncate">
+                an {detail.to.map((t) => t.name || t.address).join(", ")}
+              </div>
             )}
           </div>
         </div>
-      )}
+
+        <Separator />
+
+        {/* Subject heading */}
+        <div className="px-5 py-3">
+          <h2 className="text-base font-bold tracking-tight text-foreground break-words">
+            {subject}
+          </h2>
+        </div>
+
+        {/* 4. AI Insights Card (Summary, Action Items, Tags) */}
+        <AiInsightsCard
+          analysis={aiAnalysis}
+          loading={aiLoading}
+          error={aiError}
+          onReanalyze={onReanalyze}
+          onToggleActionItem={onToggleActionItem}
+        />
+
+        <Separator />
+
+        {/* Attachments if any */}
+        {detail?.attachments && detail.attachments.length > 0 && (
+          <div className="bg-muted/40 px-5 py-2.5 border-b flex flex-wrap gap-2 items-center text-xs">
+            <span className="flex items-center gap-1 font-medium text-muted-foreground">
+              <Paperclip className="h-3.5 w-3.5" />
+              Anhänge ({detail.attachments.length}):
+            </span>
+            {detail.attachments.map((att, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1 rounded bg-background border px-2 py-0.5 text-xs text-foreground font-mono"
+              >
+                {att.filename || `Anhang-${idx + 1}`}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Email Body Area */}
+        <div className="flex-1 p-5 overflow-x-auto text-sm text-foreground leading-relaxed">
+          {detail?.html ? (
+            <div
+              className="prose prose-sm max-w-none dark:prose-invert [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_table]:border-collapse"
+              dangerouslySetInnerHTML={{
+                __html: sanitizeEmailHtml(detail.html),
+              }}
+            />
+          ) : detail?.text ? (
+            <pre className="font-sans whitespace-pre-wrap break-words text-sm text-foreground">
+              {detail.text}
+            </pre>
+          ) : loading ? (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span>Nachrichteninhalt wird geladen...</span>
+              </div>
+              {summaryMail?.snippet && (
+                <div className="text-xs text-foreground/80 leading-relaxed font-sans border-l-2 border-primary/40 pl-3 py-1.5 bg-muted/20 rounded-r">
+                  {summaryMail.snippet}
+                </div>
+              )}
+              <div className="space-y-2 pt-2">
+                <div className="h-3 bg-muted/60 rounded w-5/6 animate-pulse" />
+                <div className="h-3 bg-muted/40 rounded w-full animate-pulse" />
+                <div className="h-3 bg-muted/50 rounded w-4/6 animate-pulse" />
+              </div>
+            </div>
+          ) : error ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs text-destructive">
+              <p className="font-semibold">E-Mail konnte nicht geladen werden</p>
+              <p className="mt-1 text-muted-foreground">{error}</p>
+            </div>
+          ) : (
+            <p className="italic text-muted-foreground text-xs">Diese E-Mail hat keinen Textinhalt.</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

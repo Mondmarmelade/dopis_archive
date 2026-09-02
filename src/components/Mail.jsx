@@ -10,6 +10,8 @@ import {
   Newspaper,
   Settings,
   Sparkles,
+  AlignJustify,
+  LayoutList,
 } from "lucide-react";
 
 import {
@@ -36,6 +38,7 @@ import {
   toggleCachedActionItem,
   getAiSettings,
 } from "@/lib/aiCache";
+import { prefetchEmail } from "@/lib/emailCache";
 import { aiQueue, useAiQueue } from "@/lib/aiQueue";
 import { groupMailsIntoThreads } from "@/lib/threadEngine";
 
@@ -56,6 +59,19 @@ export function Mail({
   const [activeTab, setActiveTab] = useState("all");
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedMailId, setSelectedMailId] = useState(null);
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("dopis_mail_view_mode") || "mailspring";
+    }
+    return "mailspring";
+  });
+
+  const handleViewModeChange = (mode) => {
+    setViewMode(mode);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("dopis_mail_view_mode", mode);
+    }
+  };
 
   // Hook for AI Queue updates
   const { queue, currentItem } = useAiQueue();
@@ -181,6 +197,11 @@ export function Mail({
           const exists = fetchedMails.some((m) => String(m.id || m.seq) === String(prev));
           return exists ? prev : (fetchedMails[0].id || fetchedMails[0].seq);
         });
+
+        // Prefetch top 3 emails in background for zero-latency instant opening
+        fetchedMails.slice(0, 3).forEach((m) => {
+          prefetchEmail(m.id || m.seq, folderToLoad);
+        });
       } else {
         setSelectedMailId(null);
       }
@@ -255,7 +276,13 @@ export function Mail({
   }, []);
 
   const handleSelectMail = useCallback((id, threadItem) => {
-    const targetId = id || (threadItem?.latestMail?.id || threadItem?.latestMail?.seq);
+    let targetId = id;
+    if (typeof id === "string" && id.startsWith("thread_")) {
+      targetId = threadItem?.latestMail?.id || threadItem?.latestMail?.seq || threadItem?.mails?.[0]?.id;
+    }
+    if (!targetId && threadItem) {
+      targetId = threadItem?.latestMail?.id || threadItem?.latestMail?.seq || threadItem?.mails?.[0]?.id;
+    }
     setSelectedMailId(targetId);
     const target = mails.find((m) => String(m.id || m.seq) === String(targetId));
     if (target && !target.read) {
@@ -321,6 +348,59 @@ export function Mail({
       console.error("Failed to move email to trash:", err);
     }
   }, [mails, selectedFolder, selectedMailId]);
+
+  const archiveMail = useCallback(async (seq) => {
+    if (!seq) return;
+
+    const remaining = mails.filter((m) => String(m.id || m.seq) !== String(seq));
+    setMails(remaining);
+    if (folderCacheRef.current[selectedFolder]) {
+      folderCacheRef.current[selectedFolder] = remaining;
+    }
+
+    if (String(selectedMailId) === String(seq)) {
+      setSelectedMailId(remaining.length > 0 ? (remaining[0].id || remaining[0].seq) : null);
+    }
+
+    try {
+      const res = await fetch("/api/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seq,
+          folder: selectedFolder,
+        }),
+      });
+
+      if (!res.ok) {
+        console.error("Failed to archive email on IMAP:", await res.text());
+      }
+    } catch (err) {
+      console.error("Failed to archive email:", err);
+    }
+  }, [mails, selectedFolder, selectedMailId]);
+
+  const toggleStar = useCallback(async (seq) => {
+    if (!seq) return;
+    const mail = mails.find((m) => String(m.id || m.seq) === String(seq));
+    const newFlagged = !mail?.flagged;
+
+    setMails((prev) =>
+      prev.map((m) =>
+        String(m.id || m.seq) === String(seq) ? { ...m, flagged: newFlagged } : m
+      )
+    );
+
+    try {
+      await fetch("/api/flags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seq, flagged: newFlagged, folder: selectedFolder }),
+      });
+    } catch (err) {
+      console.error("Failed to sync star flag with IMAP:", err);
+    }
+  }, [mails, selectedFolder]);
 
   // Memoized enriched mails list
   const enrichedMails = useMemo(() => {
@@ -519,7 +599,7 @@ export function Mail({
         {/* Main Content Area: Switches between Mails View, Settings View, and AI Activity View */}
         {currentView === "settings" ? (
           <ResizablePanel defaultSize={defaultLayout[1] + defaultLayout[2]} minSize={50} className="bg-background">
-            <div className="h-full overflow-y-auto">
+            <div className="h-full overflow-hidden flex flex-col">
               <SettingsForm onBack={() => setCurrentView("mails")} />
             </div>
           </ResizablePanel>
@@ -543,6 +623,38 @@ export function Mail({
                     {folderTitle}
                   </h1>
                   <div className="flex items-center gap-2">
+                    {/* View Style Switcher: Mailspring vs Cards */}
+                    <div className="flex items-center rounded-lg border bg-muted/60 p-0.5 h-8">
+                      <button
+                        type="button"
+                        onClick={() => handleViewModeChange("mailspring")}
+                        className={cn(
+                          "h-7 px-2 rounded-md flex items-center gap-1 text-xs transition-all cursor-pointer",
+                          viewMode === "mailspring"
+                            ? "bg-background text-foreground shadow-2xs font-medium"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                        title="Mailspring-Kompaktansicht"
+                      >
+                        <AlignJustify className="h-3.5 w-3.5" />
+                        <span className="hidden xl:inline text-[11px]">Kompakt</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleViewModeChange("cards")}
+                        className={cn(
+                          "h-7 px-2 rounded-md flex items-center gap-1 text-xs transition-all cursor-pointer",
+                          viewMode === "cards"
+                            ? "bg-background text-foreground shadow-2xs font-medium"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                        title="Kartenansicht (Erweitert)"
+                      >
+                        <LayoutList className="h-3.5 w-3.5" />
+                        <span className="hidden xl:inline text-[11px]">Karten</span>
+                      </button>
+                    </div>
+
                     <Button
                       variant="ghost"
                       size="icon"
@@ -606,6 +718,12 @@ export function Mail({
                         items={filteredThreads}
                         selectedMailId={selectedMailId}
                         onSelectMail={handleSelectMail}
+                        viewMode={viewMode}
+                        folder={selectedFolder}
+                        onToggleRead={(seq, isRead) => markMailAsRead(seq, isRead)}
+                        onMoveToTrash={(seq) => moveToTrash(seq)}
+                        onArchive={(seq) => archiveMail(seq)}
+                        onToggleStar={(seq) => toggleStar(seq)}
                       />
                     </TabsContent>
                   )}
@@ -637,6 +755,11 @@ export function Mail({
                 onMoveToTrash={() => {
                   if (selectedMailId) {
                     moveToTrash(selectedMailId);
+                  }
+                }}
+                onArchive={() => {
+                  if (selectedMailId) {
+                    archiveMail(selectedMailId);
                   }
                 }}
               />

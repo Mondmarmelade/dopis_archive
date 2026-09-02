@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { decryptData } from "../../utils/cryptography";
+import { resolveMailboxPath } from "../../utils/imapHelpers";
 
 export async function POST({ cookies, request }) {
   const authCookie = cookies.get("auth");
@@ -28,7 +29,7 @@ export async function POST({ cookies, request }) {
     });
   }
 
-  const { seq, seen } = body;
+  const { seq, seen, flagged, folder = "inbox" } = body;
   if (!seq) {
     return new Response(
       JSON.stringify({ error: "Missing required 'seq' parameter" }),
@@ -49,15 +50,25 @@ export async function POST({ cookies, request }) {
 
   try {
     await client.connect();
-    const lock = await client.getMailboxLock("INBOX");
+    const targetMailbox = await resolveMailboxPath(client, folder);
+    const lock = await client.getMailboxLock(targetMailbox);
     try {
-      if (seen) {
-        await client.messageFlagsAdd(`${seq}`, ["\\Seen"]);
-      } else {
-        await client.messageFlagsRemove(`${seq}`, ["\\Seen"]);
+      if (seen !== undefined) {
+        if (seen) {
+          await client.messageFlagsAdd(`${seq}`, ["\\Seen"]);
+        } else {
+          await client.messageFlagsRemove(`${seq}`, ["\\Seen"]);
+        }
+      }
+      if (flagged !== undefined) {
+        if (flagged) {
+          await client.messageFlagsAdd(`${seq}`, ["\\Flagged"]);
+        } else {
+          await client.messageFlagsRemove(`${seq}`, ["\\Flagged"]);
+        }
       }
       return new Response(
-        JSON.stringify({ success: true, seq, seen }),
+        JSON.stringify({ success: true, seq, seen, flagged }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     } finally {

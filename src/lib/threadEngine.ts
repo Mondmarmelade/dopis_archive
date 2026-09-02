@@ -52,6 +52,7 @@ export interface ThreadItem {
   latestMail: any;
   count: number;
   hasUnread: boolean;
+  isFlagged?: boolean;
   isOrderThread: boolean;
   orderJourney?: OrderJourney | null;
   participants: { name: string; email: string }[];
@@ -337,6 +338,7 @@ export function groupMailsIntoThreads(
     const latest = sorted[0];
 
     const hasUnread = sorted.some((m) => !m.read);
+    const isFlagged = sorted.some((m) => Boolean(m.flagged));
     const participantsMap = new Map<string, string>();
     sorted.forEach((m) => {
       const email = m.email || m.from?.address || "";
@@ -560,6 +562,7 @@ export function groupMailsIntoThreads(
       latestMail: latest,
       count: sorted.length,
       hasUnread,
+      isFlagged,
       isOrderThread: isOrder,
       orderJourney,
       participants,
