@@ -1,0 +1,41 @@
+---
+import MainLayout from "../layouts/MainLayout.astro";
+import { Mail } from "@/components/Mail";
+import { getCredentials } from "../utils/authHelper.js";
+import { isPocketBaseAvailable } from "../lib/pocketbase.ts";
+import { getLocalEmailsCount, getSyncState } from "../lib/imapSyncEngine.ts";
+
+const credentials = getCredentials(Astro.request, Astro.cookies);
+if (!credentials || credentials.length < 4) {
+  return Astro.redirect("/login");
+}
+
+const userEmail = credentials[0]?.user;
+let needsInitialSync = false;
+
+if (userEmail) {
+  try {
+    const pbAvailable = await isPocketBaseAvailable();
+    if (pbAvailable) {
+      const localCount = await getLocalEmailsCount(userEmail, "inbox");
+      const syncState = getSyncState(userEmail, "inbox");
+      if (syncState.isSyncing || (localCount === 0 && !syncState.lastSyncTime)) {
+        needsInitialSync = true;
+      }
+      if (Astro.url.searchParams.get("skipSync") === "1") {
+        needsInitialSync = false;
+      }
+    }
+  } catch (err) {
+    console.warn("SSR initial sync check error:", err);
+  }
+}
+---
+
+<MainLayout title="Inbox">
+  <Mail
+    client:load
+    initialSyncNeeded={needsInitialSync}
+    initialAccountEmail={userEmail}
+  />
+</MainLayout>

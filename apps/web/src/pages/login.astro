@@ -1,0 +1,632 @@
+---
+import UnauthLayout from "../layouts/UnauthLayout.astro";
+import { Icon } from "astro-icon/components";
+import { createCookie } from "../scripts/createCookie";
+import { ImapFlow } from "imapflow";
+import { validateImapHost } from "../utils/networkGuard.js";
+import {
+  getClientIp,
+  checkRateLimit,
+  recordFailedAttempt,
+  clearRateLimit,
+} from "../utils/rateLimiter.js";
+import { getSavedSetup, saveSetup } from "../utils/setupStore.js";
+
+const savedSetup = getSavedSetup();
+let errorMessage = "";
+let enteredUser = savedSetup.user || process.env.SECRET_USER || "";
+let enteredPass = savedSetup.pass || process.env.SECRET_PASS || "";
+let enteredHost = savedSetup.host || "imap.ionos.de";
+let enteredPort = savedSetup.port || "993";
+let enteredAiBaseUrl = savedSetup.aiBaseUrl || process.env.AI_BASE_URL || "http://localhost:11434/v1";
+let enteredAiApiKey = savedSetup.aiApiKey || process.env.AI_API_KEY || "";
+let enteredAiModel = savedSetup.aiModel || process.env.AI_MODEL || "";
+
+const isReset = Astro.url.searchParams.get("reset") === "1";
+
+if (Astro.request.method === "POST") {
+  const clientIp = getClientIp(Astro.request);
+  const rateCheck = checkRateLimit(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+
+  if (!rateCheck.allowed) {
+    errorMessage = `Zu viele Fehlversuche. Bitte warten Sie ${rateCheck.resetInSeconds} Sekunden vor dem nächsten Versuch.`;
+  } else {
+    try {
+      const data = await Astro.request.formData();
+      enteredUser = (data.get("user") || "").toString().trim();
+      enteredPass = (data.get("pass") || "").toString();
+      enteredHost = (data.get("host") || "imap.ionos.de").toString().trim();
+      enteredPort = (data.get("port") || "993").toString().trim();
+      enteredAiBaseUrl = (data.get("ai_base_url") || "http://localhost:11434/v1").toString().trim();
+      enteredAiApiKey = (data.get("ai_api_key") || "").toString().trim();
+      enteredAiModel = (data.get("ai_model") || "").toString().trim();
+
+      const hostCheck = validateImapHost(enteredHost, enteredPort);
+      if (!hostCheck.valid) {
+        errorMessage = hostCheck.error;
+      } else {
+        // Verify credentials against IMAP server before saving cookie
+        const testClient = new ImapFlow({
+          host: hostCheck.host,
+          port: hostCheck.port,
+          secure: hostCheck.port === 993,
+          tls: {
+            rejectUnauthorized: false,
+            servername: hostCheck.host,
+          },
+          auth: {
+            user: enteredUser,
+            pass: enteredPass,
+          },
+          logger: false,
+          connectionTimeout: 15000,
+          greetingTimeout: 15000,
+        });
+
+        try {
+          await testClient.connect();
+          await testClient.logout();
+          clearRateLimit(clientIp);
+        } catch (authError) {
+          recordFailedAttempt(clientIp);
+          console.error(`Login IMAP verification failed for ${enteredUser} @ ${hostCheck.host}:${hostCheck.port}:`, authError);
+          const detail = authError?.responseMessage || authError?.message || "";
+          errorMessage = `IMAP-Anmeldung fehlgeschlagen${detail ? ` (${detail})` : ""}. Bitte prüfe E-Mail-Adresse, Passwort und Server-Einstellungen (Server: ${hostCheck.host}:${hostCheck.port}).`;
+        }
+
+        if (!errorMessage) {
+          saveSetup({
+            user: enteredUser,
+            pass: enteredPass,
+            host: hostCheck.host,
+            port: hostCheck.port,
+            aiBaseUrl: enteredAiBaseUrl,
+            aiApiKey: enteredAiApiKey,
+            aiModel: enteredAiModel,
+          });
+
+          const now = Date.now();
+          const formatData = [
+            { user: enteredUser },
+            { pass: enteredPass },
+            { host: hostCheck.host },
+            { port: hostCheck.port },
+            { exp: now + 14 * 24 * 60 * 60 * 1000 },
+            { iat: now },
+          ];
+          createCookie({ data: formatData, context: Astro });
+          return Astro.redirect("/mails");
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        console.error("Login exception:", error.message);
+      }
+    }
+  }
+}
+---
+
+<UnauthLayout title="Einrichten & Anmelden">
+  <script is:inline>
+    // Clean up local storage & session caches on simulated fresh install,
+    // while PRESERVING user credentials and AI setup configuration.
+    if (window.location.search.includes("reset=1")) {
+      try {
+        const savedLogin = localStorage.getItem("dopis:saved_login");
+        const savedAi = localStorage.getItem("dopis:ai:settings");
+        localStorage.clear();
+        sessionStorage.clear();
+        if (savedLogin) localStorage.setItem("dopis:saved_login", savedLogin);
+        if (savedAi) localStorage.setItem("dopis:ai:settings", savedAi);
+        document.cookie = "auth=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+      } catch (e) {}
+    }
+  </script>
+
+  <main class="min-h-screen w-screen flex flex-col items-center justify-center p-4 sm:p-6 bg-background text-foreground antialiased selection:bg-primary/20">
+    <div class="w-full max-w-xl mx-auto space-y-6">
+      
+      {/* Brand Header */}
+      <div class="text-center space-y-2">
+        <div class="inline-flex items-center justify-center p-3 rounded-2xl bg-primary/10 text-primary mb-1 shadow-xs">
+          <Icon class="w-10 h-10" name="logo" />
+        </div>
+        <h1 class="text-2xl font-bold tracking-tight text-foreground">Dopis Einrichten & Anmelden</h1>
+        <p class="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+          Verbinde dein E-Mail-Konto und konfiguriere deinen lokalen oder Cloud-basierten KI-Assistenten für automatische Beleg- & Paket-Erkennung.
+        </p>
+      </div>
+
+      {/* Reset Notification Banner */}
+      {isReset && (
+        <div class="p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/25 text-purple-700 dark:text-purple-300 text-xs flex items-center justify-between gap-2.5 animate-in fade-in duration-200 shadow-2xs">
+          <div class="flex items-center gap-2.5">
+            <span class="flex h-2 w-2 rounded-full bg-purple-500 shrink-0 animate-ping"></span>
+            <span><strong>Frische Installation:</strong> Caches & Sitzung wurden zurückgesetzt. Deine Zugangsdaten und dein KI-Endpunkt wurden für die Neueinrichtung vorausgefüllt.</span>
+          </div>
+          <span class="text-[10px] font-mono opacity-70 shrink-0 hidden sm:inline">Bereit zum Start</span>
+        </div>
+      )}
+
+      {/* Error Message Banner */}
+      {errorMessage && (
+        <div class="p-3.5 rounded-xl bg-destructive/10 border border-destructive/25 text-destructive text-xs flex items-center gap-2 animate-in fade-in duration-200">
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
+      {/* Setup Form */}
+      <form id="setup-form" method="POST" action="/login" class="space-y-6">
+        
+        {/* Card 1: IMAP Credentials */}
+        <div class="p-5 rounded-2xl border bg-card/60 shadow-xs space-y-4">
+          <div class="flex items-center justify-between border-b pb-3">
+            <div class="flex items-center gap-2">
+              <span class="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary text-[11px] font-bold">1</span>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-foreground">E-Mail-Postfach (IMAP)</h2>
+            </div>
+            <span class="text-[11px] text-muted-foreground font-mono">IONOS / All-Inkl / Beliebig</span>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label for="user" class="text-xs font-medium text-foreground block mb-1">E-Mail-Adresse / Benutzername</label>
+              <input
+                type="email"
+                id="user"
+                name="user"
+                value={enteredUser}
+                required
+                placeholder="name@domain.de"
+                class="w-full px-3 py-2 text-xs rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-mono"
+              />
+            </div>
+
+            <div>
+              <label for="pass" class="text-xs font-medium text-foreground block mb-1">Passwort / App-Kennwort</label>
+              <input
+                type="password"
+                id="pass"
+                name="pass"
+                value={enteredPass}
+                required
+                placeholder="••••••••"
+                class="w-full px-3 py-2 text-xs rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-mono"
+              />
+            </div>
+
+            {/* IMAP Server & Port */}
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              <div class="sm:col-span-2">
+                <label for="host" class="text-xs font-medium text-foreground block mb-1">IMAP-Server (Host)</label>
+                <input
+                  type="text"
+                  id="host"
+                  name="host"
+                  value={enteredHost}
+                  required
+                  placeholder="imap.ionos.de"
+                  class="w-full px-3 py-2 text-xs rounded-lg border bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+              <div>
+                <label for="port" class="text-xs font-medium text-foreground block mb-1">Port</label>
+                <input
+                  type="number"
+                  id="port"
+                  name="port"
+                  value={enteredPort}
+                  required
+                  placeholder="993"
+                  class="w-full px-3 py-2 text-xs rounded-lg border bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            </div>
+            <p class="text-[10px] text-muted-foreground">
+              Wird bei gängigen Anbietern (IONOS, Gmail, GMX, WEB.DE etc.) automatisch anhand deiner E-Mail-Adresse angepasst.
+            </p>
+          </div>
+        </div>
+
+        {/* Card 2: Custom AI Endpoint (OpenAI-compatible protocol) */}
+        <div class="p-5 rounded-2xl border bg-card/60 shadow-xs space-y-4">
+          <div class="flex items-center justify-between border-b pb-3">
+            <div class="flex items-center gap-2">
+              <span class="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary text-[11px] font-bold">2</span>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-foreground">Eigener KI-Endpunkt</h2>
+            </div>
+            <span class="text-[11px] text-muted-foreground font-mono">OpenAI-kompatibles Protokoll</span>
+          </div>
+
+          <div class="p-3 rounded-xl bg-muted/40 border border-border/60 text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2.5">
+            <span class="text-primary text-xs shrink-0 mt-0.5 font-bold">ℹ</span>
+            <span>
+              Verbinde deinen eigenen KI-Server (z.&nbsp;B. vLLM, LM Studio, Ollama, LocalAI). Die Kommunikation erfolgt über die standardisierte OpenAI-kompatible Schnittstelle (<code>/v1</code>) direkt mit deinem Server – <strong>keine</strong> Nutzung der OpenAI Cloud.
+            </span>
+          </div>
+
+          <div class="space-y-3.5">
+            {/* Endpoint Base URL */}
+            <div>
+              <label for="ai_base_url" class="text-xs font-medium text-foreground block mb-1">
+                Server Base URL
+              </label>
+              <input
+                type="text"
+                id="ai_base_url"
+                name="ai_base_url"
+                value={enteredAiBaseUrl}
+                required
+                placeholder="http://localhost:11434/v1 oder https://mein-server.de/v1"
+                class="w-full px-3 py-2 text-xs rounded-lg border bg-background text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              />
+              <p class="text-[10px] text-muted-foreground mt-1">
+                Basisadresse deines Servers inklusive API-Pfad (üblicherweise mit <code>/v1</code> am Ende).
+              </p>
+            </div>
+
+            {/* API Key */}
+            <div>
+              <label for="ai_api_key" class="text-xs font-medium text-foreground block mb-1">
+                API Key / Auth-Token (optional)
+              </label>
+              <input
+                type="password"
+                id="ai_api_key"
+                name="ai_api_key"
+                value={enteredAiApiKey}
+                placeholder="Falls dein Server ein Token erfordert (z. B. Bearer-Token)"
+                class="w-full px-3 py-2 text-xs rounded-lg border bg-background text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              />
+            </div>
+
+            {/* Model Selection Dropdown + Server Fetch */}
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label for="ai_model" class="text-xs font-medium text-foreground">Modell auf dem Server</label>
+                <button
+                  type="button"
+                  id="fetch-models-btn"
+                  class="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/10 rounded border border-primary/20 cursor-pointer transition-colors"
+                >
+                  <span id="fetch-models-spinner" class="hidden animate-spin text-[10px]">↻</span>
+                  <span>Modelle vom Server abrufen</span>
+                </button>
+              </div>
+
+              <div class="space-y-2">
+                <select
+                  id="ai_model"
+                  name="ai_model"
+                  class="w-full px-3 py-2 text-xs rounded-lg border bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
+                >
+                  {enteredAiModel ? (
+                    <option value={enteredAiModel} selected>{enteredAiModel} (Aktuell konfiguriert)</option>
+                  ) : (
+                    <option value="" disabled selected>Kein Modell geladen – bitte 'Modelle abrufen' klicken</option>
+                  )}
+                  <optgroup label="Modelle vom Server" id="optgroup-server" class="hidden"></optgroup>
+                  <optgroup label="Manuell">
+                    <option value="__custom__">Modell manuell eintragen...</option>
+                  </optgroup>
+                </select>
+
+                <input
+                  type="text"
+                  id="ai_custom_model_input"
+                  placeholder="Eigenen Modellnamen eintragen (z. B. Qwen/Qwen3.6-35B)"
+                  class="hidden w-full px-3 py-2 text-xs rounded-lg border bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              {/* Status Message for Live Fetch & Test */}
+              <div id="ai-status-banner" class="hidden mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border">
+                <span id="ai-status-text"></span>
+              </div>
+            </div>
+
+            {/* Test Connection Button */}
+            <div class="pt-1 flex items-center justify-between">
+              <span class="text-[11px] text-muted-foreground">Verbindung und gewähltes Modell prüfen</span>
+              <button
+                type="button"
+                id="test-connection-btn"
+                class="px-3 py-1.5 text-xs font-medium rounded-lg border bg-background hover:bg-muted/70 text-foreground cursor-pointer transition-colors shadow-2xs"
+              >
+                Verbindung testen
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Submit Button */}
+        <button
+          type="submit"
+          id="submit-btn"
+          class="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs tracking-wide shadow-md transition-all active:scale-[0.99] cursor-pointer flex items-center justify-center gap-2"
+        >
+          <span>Dopis einrichten & Postfach verbinden</span>
+          <span>→</span>
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <script is:inline>
+    // Elements
+    const baseUrlInput = document.getElementById("ai_base_url");
+    const apiKeyInput = document.getElementById("ai_api_key");
+    const modelSelect = document.getElementById("ai_model");
+    const customModelInput = document.getElementById("ai_custom_model_input");
+    const fetchModelsBtn = document.getElementById("fetch-models-btn");
+    const fetchSpinner = document.getElementById("fetch-models-spinner");
+    const testBtn = document.getElementById("test-connection-btn");
+    const statusBanner = document.getElementById("ai-status-banner");
+    const statusText = document.getElementById("ai-status-text");
+    const setupForm = document.getElementById("setup-form");
+
+    // Pre-fill inputs from localStorage if present
+    try {
+      const savedLoginStr = localStorage.getItem("dopis:saved_login");
+      if (savedLoginStr) {
+        const savedLogin = JSON.parse(savedLoginStr);
+        const userInput = document.getElementById("user");
+        const passInput = document.getElementById("pass");
+        const hostInput = document.getElementById("host");
+        const portInput = document.getElementById("port");
+        if (userInput && savedLogin.user && !userInput.value) userInput.value = savedLogin.user;
+        if (passInput && savedLogin.pass && !passInput.value) passInput.value = savedLogin.pass;
+        if (hostInput && savedLogin.host && (!hostInput.value || hostInput.value === "imap.ionos.de")) hostInput.value = savedLogin.host;
+        if (portInput && savedLogin.port && (!portInput.value || portInput.value === "993")) portInput.value = savedLogin.port;
+      }
+
+      const savedAiStr = localStorage.getItem("dopis:ai:settings");
+      if (savedAiStr) {
+        const savedAi = JSON.parse(savedAiStr);
+        if (savedAi.baseUrl && baseUrlInput && !baseUrlInput.value) {
+          baseUrlInput.value = savedAi.baseUrl;
+        }
+        if (savedAi.apiKey !== undefined && apiKeyInput && !apiKeyInput.value) {
+          apiKeyInput.value = savedAi.apiKey;
+        }
+        if (savedAi.model && modelSelect) {
+          let found = false;
+          for (let i = 0; i < modelSelect.options.length; i++) {
+            if (modelSelect.options[i].value === savedAi.model) {
+              modelSelect.selectedIndex = i;
+              found = true;
+              break;
+            }
+          }
+          if (found) {
+            customModelInput.classList.add("hidden");
+          } else {
+            const opt = document.createElement("option");
+            opt.value = savedAi.model;
+            opt.textContent = `${savedAi.model} (Gespeichert)`;
+            opt.selected = true;
+            modelSelect.insertBefore(opt, modelSelect.firstChild);
+            modelSelect.value = savedAi.model;
+            customModelInput.classList.add("hidden");
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not prefill from localStorage:", e);
+    }
+
+    // Email domain auto-configuration for common hosts
+    const userInput = document.getElementById("user");
+    const passInput = document.getElementById("pass");
+    const hostInput = document.getElementById("host");
+    const portInput = document.getElementById("port");
+
+    userInput?.addEventListener("input", () => {
+      const email = userInput.value.trim().toLowerCase();
+      if (email.includes("@")) {
+        const domain = email.split("@")[1];
+        if (domain === "ionos.de" || domain === "ionos.com" || domain === "mondmarmelade.com") {
+          if (!hostInput.value || hostInput.value.includes("domain.de")) hostInput.value = "imap.ionos.de";
+          if (!portInput.value) portInput.value = "993";
+        } else if (domain === "gmail.com" || domain === "googlemail.com") {
+          if (!hostInput.value || hostInput.value.includes("domain.de") || hostInput.value.includes("ionos.de")) hostInput.value = "imap.gmail.com";
+          if (!portInput.value) portInput.value = "993";
+        } else if (domain === "gmx.de" || domain === "gmx.net") {
+          if (!hostInput.value || hostInput.value.includes("domain.de") || hostInput.value.includes("ionos.de")) hostInput.value = "imap.gmx.net";
+          if (!portInput.value) portInput.value = "993";
+        } else if (domain === "web.de") {
+          if (!hostInput.value || hostInput.value.includes("domain.de") || hostInput.value.includes("ionos.de")) hostInput.value = "imap.web.de";
+          if (!portInput.value) portInput.value = "993";
+        } else if (domain === "posteo.de") {
+          if (!hostInput.value || hostInput.value.includes("domain.de") || hostInput.value.includes("ionos.de")) hostInput.value = "posteo.de";
+          if (!portInput.value) portInput.value = "993";
+        } else if (domain === "mailbox.org") {
+          if (!hostInput.value || hostInput.value.includes("domain.de") || hostInput.value.includes("ionos.de")) hostInput.value = "imap.mailbox.org";
+          if (!portInput.value) portInput.value = "993";
+        }
+      }
+    });
+
+    // Helper: get currently selected model
+    function getSelectedModel() {
+      if (modelSelect.value === "__custom__") {
+        return customModelInput.value.trim();
+      }
+      return modelSelect.value || "";
+    }
+
+    // Model selection change handler
+    modelSelect.addEventListener("change", () => {
+      const val = modelSelect.value;
+      if (val === "__custom__") {
+        customModelInput.classList.remove("hidden");
+        customModelInput.focus();
+        statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-muted/60 text-foreground border-border";
+        statusText.textContent = "Eigenes Modell wird manuell spezifiziert.";
+        statusBanner.classList.remove("hidden");
+      } else if (val) {
+        customModelInput.classList.add("hidden");
+        // Ensure option is marked as selected in the DOM
+        for (let i = 0; i < modelSelect.options.length; i++) {
+          modelSelect.options[i].selected = (modelSelect.options[i].value === val);
+        }
+        statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20";
+        statusText.textContent = `✓ Modell ausgewählt: ${val}`;
+        statusBanner.classList.remove("hidden");
+      }
+    });
+
+    customModelInput?.addEventListener("input", () => {
+      const customVal = customModelInput.value.trim();
+      if (customVal) {
+        statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20";
+        statusText.textContent = `✓ Manuelles Modell: ${customVal}`;
+        statusBanner.classList.remove("hidden");
+      }
+    });
+
+    // Dynamic model fetching from server
+    fetchModelsBtn?.addEventListener("click", async () => {
+      const baseUrl = baseUrlInput.value.trim();
+      const apiKey = apiKeyInput.value.trim();
+
+      if (!baseUrl) {
+        statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
+        statusText.textContent = "Bitte gib zuerst eine Server Base URL ein.";
+        statusBanner.classList.remove("hidden");
+        baseUrlInput.focus();
+        return;
+      }
+
+      fetchSpinner?.classList.remove("hidden");
+      fetchModelsBtn.setAttribute("disabled", "true");
+
+      try {
+        const res = await fetch("/api/ai/models", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ baseUrl, apiKey }),
+        });
+
+        const data = await res.json();
+        if (data.success && Array.isArray(data.models) && data.models.length > 0) {
+          const serverGroup = document.getElementById("optgroup-server");
+          serverGroup.innerHTML = "";
+          serverGroup.classList.remove("hidden");
+          serverGroup.label = `Verfügbare Modelle auf dem Server (${data.models.length})`;
+
+          const currentChoice = getSelectedModel();
+
+          data.models.forEach((m) => {
+            const opt = document.createElement("option");
+            opt.value = m;
+            opt.textContent = m;
+            serverGroup.appendChild(opt);
+          });
+
+          // If previously chosen model is in the fetched list, keep it; otherwise pick the first
+          if (data.models.includes(currentChoice)) {
+            modelSelect.value = currentChoice;
+          } else {
+            modelSelect.value = data.models[0];
+          }
+
+          // Mark option selected
+          for (let i = 0; i < modelSelect.options.length; i++) {
+            modelSelect.options[i].selected = (modelSelect.options[i].value === modelSelect.value);
+          }
+
+          customModelInput.classList.add("hidden");
+
+          statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20";
+          statusText.textContent = `✓ ${data.models.length} Modelle vom Server geladen. Ausgewählt: ${modelSelect.value}`;
+          statusBanner.classList.remove("hidden");
+        } else {
+          statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
+          statusText.textContent = data.error || "Keine Modelle auf dem Server gefunden. Bitte trage den Modellnamen manuell ein.";
+          statusBanner.classList.remove("hidden");
+        }
+      } catch (err) {
+        statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-destructive/10 text-destructive border-destructive/20";
+        statusText.textContent = `Fehler beim Abrufen der Modelle: ${err.message}`;
+        statusBanner.classList.remove("hidden");
+      } finally {
+        fetchSpinner?.classList.add("hidden");
+        fetchModelsBtn.removeAttribute("disabled");
+      }
+    });
+
+    // Test connection
+    testBtn?.addEventListener("click", async () => {
+      const baseUrl = baseUrlInput.value.trim();
+      const apiKey = apiKeyInput.value.trim();
+      const model = getSelectedModel();
+
+      if (!model) {
+        statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
+        statusText.textContent = "Bitte wähle zuerst ein Modell aus oder trage eines ein.";
+        statusBanner.classList.remove("hidden");
+        return;
+      }
+
+      testBtn.textContent = "Teste...";
+      testBtn.setAttribute("disabled", "true");
+
+      try {
+        const res = await fetch("/api/ai/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ baseUrl, apiKey, model }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20";
+          statusText.textContent = `✓ Verbindung erfolgreich! Modell "${data.model}" ist einsatzbereit.`;
+          statusBanner.classList.remove("hidden");
+        } else {
+          statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-destructive/10 text-destructive border-destructive/20";
+          statusText.textContent = `Verbindung fehlgeschlagen: ${data.error || "Unbekannter Fehler"}`;
+          statusBanner.classList.remove("hidden");
+        }
+      } catch (err) {
+        statusBanner.className = "mt-2 p-2.5 rounded-lg text-[11px] flex items-center justify-between border bg-destructive/10 text-destructive border-destructive/20";
+        statusText.textContent = `Netzwerkfehler: ${err.message}`;
+        statusBanner.classList.remove("hidden");
+      } finally {
+        testBtn.textContent = "Verbindung testen";
+        testBtn.removeAttribute("disabled");
+      }
+    });
+
+    // Save AI settings & Login credentials to localStorage on form submit
+    setupForm?.addEventListener("submit", () => {
+      const chosenModel = getSelectedModel();
+      try {
+        localStorage.setItem(
+          "dopis:ai:settings",
+          JSON.stringify({
+            baseUrl: baseUrlInput.value.trim(),
+            apiKey: apiKeyInput.value.trim(),
+            model: chosenModel,
+            anonymizePii: true,
+            developerMode: false,
+          })
+        );
+        localStorage.setItem(
+          "dopis:saved_login",
+          JSON.stringify({
+            user: userInput?.value.trim() || "",
+            pass: passInput?.value || "",
+            host: hostInput?.value.trim() || "imap.ionos.de",
+            port: portInput?.value.trim() || "993",
+          })
+        );
+      } catch (e) {
+        console.warn("Could not save settings to localStorage:", e);
+      }
+    });
+  </script>
+</UnauthLayout>

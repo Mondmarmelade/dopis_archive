@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "lynx-ui": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-ui/SKILL.md",
+      "computedHash": "bdb284961899c9781c3315d47b5a36805cb3b4a8032f7b853d08fd7136ec86f7"
+    }
+  }
+}

@@ -1,5 +1,6 @@
 # build output
 dist/
+.rspeedy/
 
 # generated types
 .astro/
@@ -16,12 +17,24 @@ pnpm-debug.log*
 # environment variables
 .env
 .env.production
+.env.local
 
 # macOS-specific files
 .DS_Store
 
-# jetbrains setting folder
+# IDE folders
 .idea/
 
 # Local Netlify folder
 .netlify
+
+# Local database & state
+pb_data/
+.install_reset
+.last_setup.json
+pocketbase.exe
+pocketbase.zip
+*.exe
+
+# Agent logs and workdirs
+.agents/

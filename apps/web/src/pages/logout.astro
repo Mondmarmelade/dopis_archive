@@ -1,0 +1,11 @@
+---
+import { setResetEpoch } from "../utils/authHelper";
+
+const isReset = Astro.url.searchParams.get("reset") === "1";
+if (isReset) {
+  setResetEpoch(Date.now());
+}
+
+Astro.cookies.delete("auth", { path: "/" });
+return Astro.redirect(isReset ? "/login?reset=1" : "/login");
+---

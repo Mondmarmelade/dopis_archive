@@ -1,0 +1,24 @@
+{
+  "name": "@dopis/mobile",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "rspeedy dev",
+    "build": "rspeedy build",
+    "preview": "rspeedy preview"
+  },
+  "dependencies": {
+    "@dopis/shared": "workspace:*",
+    "@lynx-js/react": "^0.125.0"
+  },
+  "devDependencies": {
+    "@lynx-js/qrcode-rsbuild-plugin": "^0.6.0",
+    "@lynx-js/react-rsbuild-plugin": "^0.19.1",
+    "@lynx-js/rspeedy": "^0.16.5",
+    "@lynx-js/types": "^4.2.1",
+    "@types/qrcode-terminal": "^0.12.2",
+    "qrcode-terminal": "^0.12.0",
+    "typescript": "^5.7.3"
+  }
+}

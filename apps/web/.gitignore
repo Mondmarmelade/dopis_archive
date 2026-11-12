@@ -1,0 +1,4 @@
+# Local Netlify folder
+.netlify
+.install_reset
+.last_setup.json
