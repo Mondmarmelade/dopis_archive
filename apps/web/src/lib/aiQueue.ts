@@ -1,4 +1,10 @@
-import { getAiSettings, getCachedAnalysis, setCachedAnalysis, type AiAnalysisResult } from "./aiCache";
+import {
+  getAiSettings,
+  getCachedAnalysis,
+  setCachedAnalysis,
+  saveAiSettings,
+  type AiAnalysisResult,
+} from "./aiCache";
 
 export type QueueStatus = "idle" | "running" | "paused" | "completed" | "error";
 export type ItemStatus = "queued" | "analyzing" | "completed" | "failed" | "skipped";
@@ -6,9 +12,12 @@ export type ItemStatus = "queued" | "analyzing" | "completed" | "failed" | "skip
 export interface AiQueueItem {
   id: string | number;
   seq?: number;
+  uid?: number;
+  date?: string;
   subject: string;
   email: string;
   name?: string;
+  headerSignals?: any;
   status: ItemStatus;
   addedAt: number;
   startedAt?: number;
@@ -18,6 +27,7 @@ export interface AiQueueItem {
   error?: string;
   folder?: string;
   force?: boolean;
+  trigger?: "manual" | "new_incoming";
 }
 
 export interface AiActivityEntry {
@@ -26,12 +36,18 @@ export interface AiActivityEntry {
   subject: string;
   sender: string;
   category?: string;
+  categoryConfidence?: number;
   tags?: string[];
   status: "success" | "error";
   durationMs: number;
+  deciderLatencyMs?: number;
+  extractorLatencyMs?: number;
+  extractorSkipped?: boolean;
   promptTokens?: number;
   completionTokens?: number;
+  costUsd?: number;
   model?: string;
+  trigger?: "manual" | "new_incoming";
   timestamp: number;
   error?: string;
 }
@@ -42,8 +58,12 @@ export interface AiQueueStats {
   successCount: number;
   errorCount: number;
   totalLatencyMs: number;
+  totalDeciderLatencyMs: number;
+  totalExtractorLatencyMs: number;
+  extractorSkippedCount: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalCostUsd: number;
   lastResetDate: string;
 }
 
@@ -58,9 +78,11 @@ export interface AiQueueState {
   status: QueueStatus;
   queue: AiQueueItem[];
   currentItem: AiQueueItem | null;
+  activeItems: AiQueueItem[];
   activityLog: AiActivityEntry[];
   stats: AiQueueStats;
   errorMessage?: string | null;
+  /** Controls automatic single-email analysis strictly for NEWLY arriving emails */
   isAutoQueueEnabled: boolean;
   batchTotal: number;
   batchCompleted: number;
@@ -69,8 +91,7 @@ export interface AiQueueState {
 
 const STATS_KEY = "dopis:ai:stats";
 const ACTIVITY_KEY = "dopis:ai:activity";
-const AUTO_QUEUE_KEY = "dopis:ai:auto_queue";
-const MAX_ACTIVITY_LOG = 100;
+const MAX_ACTIVITY_LOG = 120;
 
 function getTodayString(): string {
   return new Date().toISOString().slice(0, 10);
@@ -83,8 +104,12 @@ function loadInitialStats(): AiQueueStats {
     successCount: 0,
     errorCount: 0,
     totalLatencyMs: 0,
+    totalDeciderLatencyMs: 0,
+    totalExtractorLatencyMs: 0,
+    extractorSkippedCount: 0,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
+    totalCostUsd: 0,
     lastResetDate: getTodayString(),
   };
 
@@ -93,7 +118,7 @@ function loadInitialStats(): AiQueueStats {
   try {
     const raw = localStorage.getItem(STATS_KEY);
     if (!raw) return defaultStats;
-    const parsed: AiQueueStats = JSON.parse(raw);
+    const parsed: Partial<AiQueueStats> = JSON.parse(raw);
     const today = getTodayString();
     if (parsed.lastResetDate !== today) {
       parsed.todayAnalyzed = 0;
@@ -115,21 +140,21 @@ function loadInitialActivity(): AiActivityEntry[] {
   }
 }
 
-function loadAutoQueueSetting(): boolean {
-  if (typeof window === "undefined") return false;
+function loadAutoNewMailSetting(): boolean {
+  if (typeof window === "undefined") return true;
   try {
-    const raw = localStorage.getItem(AUTO_QUEUE_KEY);
-    return raw !== null ? JSON.parse(raw) : false;
+    const settings = getAiSettings();
+    return settings.autoAnalyzeNewEmails !== false;
   } catch {
-    return false;
+    return true;
   }
 }
 
 class AiQueueManager {
   private state: AiQueueState;
   private listeners: Set<() => void> = new Set();
-  private isProcessing = false;
-  private abortController: AbortController | null = null;
+  private activeCount = 0;
+  private abortControllers: Map<string, AbortController> = new Map();
   private idleCallbackId: number | NodeJS.Timeout | null = null;
 
   constructor() {
@@ -137,10 +162,11 @@ class AiQueueManager {
       status: "idle",
       queue: [],
       currentItem: null,
+      activeItems: [],
       activityLog: loadInitialActivity(),
       stats: loadInitialStats(),
       errorMessage: null,
-      isAutoQueueEnabled: loadAutoQueueSetting(),
+      isAutoQueueEnabled: loadAutoNewMailSetting(),
       batchTotal: 0,
       batchCompleted: 0,
       lastBatchSummary: null,
@@ -176,7 +202,10 @@ class AiQueueManager {
   private saveActivity() {
     if (typeof window === "undefined") return;
     try {
-      localStorage.setItem(ACTIVITY_KEY, JSON.stringify(this.state.activityLog.slice(0, MAX_ACTIVITY_LOG)));
+      localStorage.setItem(
+        ACTIVITY_KEY,
+        JSON.stringify(this.state.activityLog.slice(0, MAX_ACTIVITY_LOG))
+      );
     } catch (e) {
       console.warn("Failed to persist AI activity log:", e);
     }
@@ -190,18 +219,47 @@ class AiQueueManager {
     this.state.isAutoQueueEnabled = enabled;
     if (typeof window !== "undefined") {
       try {
-        localStorage.setItem(AUTO_QUEUE_KEY, JSON.stringify(enabled));
+        const current = getAiSettings();
+        saveAiSettings({ ...current, autoAnalyzeNewEmails: enabled });
       } catch {}
     }
     this.notify();
   }
 
+  private getConcurrency(): number {
+    const settings = getAiSettings();
+    return settings.deciderProtocol === "openai_compat" ? 1 : 3;
+  }
+
   public enqueueEmails(
-    items: Array<{ id?: string | number; seq?: number; subject?: string; email?: string; name?: string; read?: boolean; date?: string }>,
-    options: { force?: boolean; folder?: string; onlyUnread?: boolean; prepend?: boolean } = {}
+    items: Array<{
+      id?: string | number;
+      seq?: number;
+      uid?: number;
+      subject?: string;
+      email?: string;
+      name?: string;
+      read?: boolean;
+      date?: string;
+      headerSignals?: any;
+      aiAnalysis?: any;
+    }>,
+    options: {
+      force?: boolean;
+      folder?: string;
+      onlyUnread?: boolean;
+      prepend?: boolean;
+      trigger?: "manual" | "new_incoming";
+    } = {}
   ): number {
     if (!items || items.length === 0) return 0;
-    const { force = false, folder, onlyUnread = false, prepend = false } = options;
+    const {
+      force = false,
+      folder = "inbox",
+      onlyUnread = false,
+      prepend = false,
+      trigger = "manual",
+    } = options;
 
     let addedCount = 0;
     const newItems: AiQueueItem[] = [];
@@ -210,36 +268,39 @@ class AiQueueManager {
       const id = mail.id || mail.seq;
       if (!id) continue;
 
-      // If onlyUnread is specified (for selective auto-queue), skip read emails
       if (onlyUnread && mail.read) continue;
+      if (!force && (mail.aiAnalysis || getCachedAnalysis(id))) continue;
 
-      // Check if already in cache (unless force is set)
-      if (!force && getCachedAnalysis(id)) continue;
-
-      // Check if already in queue or currently analyzing
       const inQueue = this.state.queue.some((q) => String(q.id) === String(id));
-      const isCurrent = this.state.currentItem && String(this.state.currentItem.id) === String(id);
-      if (inQueue || isCurrent) continue;
+      const isActive = this.state.activeItems.some((a) => String(a.id) === String(id));
+      if (inQueue || isActive) continue;
 
       newItems.push({
         id,
         seq: mail.seq,
+        uid: mail.uid,
+        date: mail.date,
         subject: mail.subject || "Kein Betreff",
         email: mail.email || "",
         name: mail.name,
+        headerSignals: mail.headerSignals,
         status: "queued",
         addedAt: Date.now(),
         retries: 0,
         maxRetries: 2,
         folder,
         force,
+        trigger,
       });
       addedCount++;
     }
 
     if (newItems.length > 0) {
-      this.state.queue = prepend ? [...newItems, ...this.state.queue] : [...this.state.queue, ...newItems];
-      if (!this.state.currentItem && this.state.queue.length === newItems.length) {
+      this.state.queue = prepend
+        ? [...newItems, ...this.state.queue]
+        : [...this.state.queue, ...newItems];
+
+      if (this.activeCount === 0 && this.state.queue.length === newItems.length) {
         this.state.batchTotal = newItems.length;
         this.state.batchCompleted = 0;
       } else {
@@ -256,59 +317,111 @@ class AiQueueManager {
     return addedCount;
   }
 
+  /**
+   * Enqueues a single newly arrived incoming email (only when autoAnalyzeNewEmails is enabled).
+   */
+  public enqueueNewIncomingEmail(
+    mail: {
+      id?: string | number;
+      seq?: number;
+      uid?: number;
+      subject?: string;
+      email?: string;
+      name?: string;
+      date?: string;
+      headerSignals?: any;
+      aiAnalysis?: any;
+    },
+    folder = "inbox"
+  ): number {
+    if (!this.state.isAutoQueueEnabled) return 0;
+    return this.enqueueEmails([mail], {
+      folder,
+      prepend: true,
+      trigger: "new_incoming",
+    });
+  }
+
   public scheduleProcessing() {
-    if (this.isProcessing || this.state.status === "paused") return;
-    if (this.state.queue.length === 0 && !this.state.currentItem) {
-      if (this.state.status === "running") {
-        this.state.status = "completed";
-        this.notify();
-      }
-      return;
-    }
+    if (this.state.status === "paused") return;
+    if (this.state.queue.length === 0) return;
+
+    if (this.idleCallbackId) return;
 
     if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      if (this.idleCallbackId) cancelIdleCallback(this.idleCallbackId as number);
-      this.idleCallbackId = window.requestIdleCallback(() => this.processNext(), { timeout: 1500 });
+      this.idleCallbackId = (window as any).requestIdleCallback(
+        () => {
+          this.idleCallbackId = null;
+          this.pumpQueue();
+        },
+        { timeout: 600 }
+      );
     } else {
-      if (this.idleCallbackId) clearTimeout(this.idleCallbackId as NodeJS.Timeout);
-      this.idleCallbackId = setTimeout(() => this.processNext(), 200);
+      this.idleCallbackId = setTimeout(() => {
+        this.idleCallbackId = null;
+        this.pumpQueue();
+      }, 100);
     }
   }
 
-  public async start() {
+  public start() {
+    this.state.errorMessage = null;
     if (this.state.status === "paused") {
       this.state.status = "idle";
     }
-    this.scheduleProcessing();
+    this.notify();
+    this.pumpQueue();
   }
 
   public pause() {
     this.state.status = "paused";
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
+    if (this.idleCallbackId) {
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        try {
+          (window as any).cancelIdleCallback(this.idleCallbackId);
+        } catch {}
+      } else {
+        clearTimeout(this.idleCallbackId as any);
+      }
+      this.idleCallbackId = null;
     }
-    this.isProcessing = false;
+
+    for (const ctrl of this.abortControllers.values()) {
+      ctrl.abort();
+    }
+    this.abortControllers.clear();
+
+    if (this.state.activeItems.length > 0) {
+      const requeued = this.state.activeItems.map((item) => ({
+        ...item,
+        status: "queued" as ItemStatus,
+        startedAt: undefined,
+      }));
+      this.state.queue = [...requeued, ...this.state.queue];
+      this.state.activeItems = [];
+      this.state.currentItem = null;
+      this.activeCount = 0;
+    }
+
     this.notify();
   }
 
   public resume() {
-    if (this.state.status === "paused" || this.state.status === "error") {
-      this.state.status = "idle";
-      this.state.errorMessage = null;
-      this.notify();
-      this.scheduleProcessing();
-    }
+    this.state.errorMessage = null;
+    this.state.status = "idle";
+    this.notify();
+    this.pumpQueue();
   }
 
   public clearQueue() {
+    this.pause();
     this.state.queue = [];
+    this.state.activeItems = [];
+    this.state.currentItem = null;
+    this.state.status = "idle";
+    this.state.errorMessage = null;
     this.state.batchTotal = 0;
     this.state.batchCompleted = 0;
-    this.state.lastBatchSummary = null;
-    if (!this.state.currentItem) {
-      this.state.status = "idle";
-    }
     this.notify();
   }
 
@@ -324,37 +437,35 @@ class AiQueueManager {
   }
 
   public retryFailed() {
-    const failedEntries = this.state.activityLog.filter((e) => e.status === "error");
-    if (failedEntries.length === 0) return;
-
-    for (const entry of failedEntries) {
-      this.enqueueEmails(
-        [
-          {
-            id: entry.mailId,
-            subject: entry.subject,
-            email: entry.sender,
-          },
-        ],
-        { force: true }
-      );
+    const failedLogs = this.state.activityLog.filter((a) => a.status === "error");
+    const unique = new Map<string, AiActivityEntry>();
+    for (const entry of failedLogs) {
+      const key = String(entry.mailId);
+      if (!unique.has(key) && !getCachedAnalysis(entry.mailId)) {
+        unique.set(key, entry);
+      }
     }
+    const toRetry = Array.from(unique.values()).map((a) => ({
+      id: a.mailId,
+      seq: Number(a.mailId) || undefined,
+      subject: a.subject,
+      email: a.sender,
+    }));
+    this.enqueueEmails(toRetry, { force: true, trigger: "manual" });
   }
 
-  public retrySingleItem(mailId: string | number, subject?: string, sender?: string) {
+  public retrySingleItem(id: string | number, subject?: string, sender?: string) {
     this.enqueueEmails(
-      [
-        {
-          id: mailId,
-          subject: subject || "E-Mail",
-          email: sender || "",
-        },
-      ],
-      { force: true }
+      [{ id, seq: Number(id) || undefined, subject: subject || "E-Mail", email: sender || "" }],
+      { force: true, prepend: true, trigger: "manual" }
     );
   }
 
-  private updateStatsOnResult(success: boolean, durationMs: number, promptTokens?: number, completionTokens?: number) {
+  private updateStatsOnResult(
+    success: boolean,
+    durationMs: number,
+    result?: AiAnalysisResult | null
+  ) {
     const today = getTodayString();
     if (this.state.stats.lastResetDate !== today) {
       this.state.stats.todayAnalyzed = 0;
@@ -369,8 +480,26 @@ class AiQueueManager {
       this.state.stats.errorCount++;
     }
     this.state.stats.totalLatencyMs += durationMs;
-    if (promptTokens) this.state.stats.totalPromptTokens += promptTokens;
-    if (completionTokens) this.state.stats.totalCompletionTokens += completionTokens;
+
+    const deciderMs = result?._debug?.stages?.decider?.durationMs;
+    const extractorMs = result?._debug?.stages?.extractor?.durationMs;
+    const extractorSkipped = result?.pipeline?.extractorSkipped ?? result?._debug?.stages?.extractor?.skipped;
+
+    if (typeof deciderMs === "number") this.state.stats.totalDeciderLatencyMs += deciderMs;
+    if (typeof extractorMs === "number") this.state.stats.totalExtractorLatencyMs += extractorMs;
+    if (extractorSkipped) this.state.stats.extractorSkippedCount++;
+
+    if (result?._debug?.promptTokens) {
+      this.state.stats.totalPromptTokens += result._debug.promptTokens;
+    }
+    if (result?._debug?.completionTokens) {
+      this.state.stats.totalCompletionTokens += result._debug.completionTokens;
+    }
+    if (typeof result?._debug?.totalCostUsd === "number") {
+      this.state.stats.totalCostUsd = Number(
+        (this.state.stats.totalCostUsd + result._debug.totalCostUsd).toFixed(6)
+      );
+    }
 
     this.saveStats();
   }
@@ -389,90 +518,135 @@ class AiQueueManager {
       subject: subject || "Unbekannter Betreff",
       sender: sender || "",
       category: result?.category,
+      categoryConfidence: result?.categoryConfidence,
       tags: result?.tags,
       status: result ? "success" : "error",
       durationMs: durationMs || 0,
+      deciderLatencyMs: result?._debug?.stages?.decider?.durationMs,
+      extractorLatencyMs: result?._debug?.stages?.extractor?.durationMs,
+      extractorSkipped: result?.pipeline?.extractorSkipped,
       promptTokens: result?._debug?.promptTokens,
       completionTokens: result?._debug?.completionTokens,
+      costUsd: result?._debug?.totalCostUsd,
       model: result?._debug?.model,
+      trigger: "manual",
       timestamp: Date.now(),
       error,
     };
 
     this.state.activityLog = [entry, ...this.state.activityLog.slice(0, MAX_ACTIVITY_LOG - 1)];
-    this.updateStatsOnResult(
-      Boolean(result),
-      durationMs,
-      result?._debug?.promptTokens,
-      result?._debug?.completionTokens
-    );
+    this.updateStatsOnResult(Boolean(result), durationMs, result);
     this.saveActivity();
     this.notify();
   }
 
-  private async processNext() {
-    if (this.isProcessing || this.state.status === "paused") return;
-    if (this.state.queue.length === 0) {
-      this.state.currentItem = null;
-      if (this.state.status === "running") {
-        this.state.status = "completed";
-      }
-      this.notify();
-      return;
+  private pumpQueue() {
+    if (this.state.status === "paused") return;
+    const concurrency = this.getConcurrency();
+
+    while (this.activeCount < concurrency && this.state.queue.length > 0) {
+      const nextItem = this.state.queue.shift()!;
+      this.processItem(nextItem);
     }
 
-    this.isProcessing = true;
+    if (this.activeCount === 0 && this.state.queue.length === 0 && this.state.status === "running") {
+      this.finishBatch();
+    }
+  }
+
+  private finishBatch() {
+    const total = Math.max(this.state.batchTotal, this.state.batchCompleted, 1);
+    const lastBatchLogs = this.state.activityLog.slice(0, total);
+    const errCount = lastBatchLogs.filter((a) => a.status === "error").length;
+    const succCount = Math.max(0, total - errCount);
+
+    this.state.currentItem = null;
+    this.state.activeItems = [];
+    if (this.state.status !== "paused") {
+      this.state.status = "completed";
+      this.state.lastBatchSummary = {
+        total,
+        success: succCount,
+        error: errCount,
+        finishedAt: Date.now(),
+      };
+      this.state.batchTotal = 0;
+      this.state.batchCompleted = 0;
+    }
+    this.notify();
+
+    setTimeout(() => {
+      if (this.state.status === "completed") {
+        this.state.status = "idle";
+        this.state.lastBatchSummary = null;
+        this.notify();
+      }
+    }, 4500);
+  }
+
+  private async processItem(item: AiQueueItem) {
+    this.activeCount++;
     this.state.status = "running";
 
-    const nextItem = this.state.queue[0];
-    this.state.queue = this.state.queue.slice(1);
-    this.state.currentItem = {
-      ...nextItem,
+    const runningItem: AiQueueItem = {
+      ...item,
       status: "analyzing",
       startedAt: Date.now(),
     };
+
+    this.state.activeItems = [...this.state.activeItems, runningItem];
+    this.state.currentItem = this.state.activeItems[0] || runningItem;
     this.notify();
+
+    const controller = new AbortController();
+    const itemKey = String(item.id);
+    this.abortControllers.set(itemKey, controller);
 
     const startTime = performance.now();
     let result: AiAnalysisResult | null = null;
     let errorMessage: string | undefined;
 
     try {
-      this.abortController = new AbortController();
       const settings = getAiSettings();
 
-      // Fetch full email content to provide complete context (avoids hallucinated To-Dos from missing body text)
       let emailText = "";
       let emailHtml = "";
+      let emailAttachments: any[] = [];
+      let emailDate = item.date || "";
       try {
         const detailRes = await fetch(
-          `/api/email?seq=${nextItem.seq || nextItem.id}&folder=${nextItem.folder || "inbox"}`,
-          { signal: this.abortController.signal }
+          `/api/email?seq=${item.seq || item.id}&folder=${item.folder || "inbox"}`,
+          { signal: controller.signal }
         );
         if (detailRes.ok) {
           const detail = await detailRes.json();
           emailText = detail.text || "";
           emailHtml = detail.html || "";
+          emailAttachments = Array.isArray(detail.attachments) ? detail.attachments : [];
+          if (!emailDate && detail.date) emailDate = detail.date;
         }
-      } catch (e) {
-        // Fallback to subject-only if detail fetch fails
-      }
+      } catch {}
 
       const res = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: this.abortController.signal,
+        signal: controller.signal,
         body: JSON.stringify({
-          subject: nextItem.subject,
-          from: nextItem.name ? `${nextItem.name} <${nextItem.email}>` : nextItem.email,
+          seq: item.seq || item.id,
+          id: item.id,
+          folder: item.folder || "inbox",
+          date: emailDate || new Date().toISOString(),
+          subject: item.subject,
+          from: item.name ? `${item.name} <${item.email}>` : item.email,
           text: emailText,
           html: emailHtml,
+          headers: item.headerSignals || null,
+          attachments: emailAttachments,
           settings,
         }),
       });
 
       if (!res.ok) {
-        // Check for Quota or Authentication errors
         if (res.status === 401) {
           throw new Error("Authentifizierungsfehler: Bitte überprüfe deinen API-Schlüssel in den Einstellungen.");
         }
@@ -484,104 +658,80 @@ class AiQueueManager {
       }
 
       result = await res.json();
-      setCachedAnalysis(nextItem.id, result!);
+      setCachedAnalysis(item.id, result!);
     } catch (err: any) {
       if (err.name === "AbortError") {
-        // Cancelled / Paused
-        this.isProcessing = false;
+        this.abortControllers.delete(itemKey);
+        this.activeCount = Math.max(0, this.activeCount - 1);
         return;
       }
       errorMessage = err.message || "Analyse fehlgeschlagen";
 
-      // If Quota or Auth error, pause the queue automatically
-      if (errorMessage?.includes("Authentifizierungsfehler") || errorMessage?.includes("Rate Limit") || errorMessage?.includes("Quota")) {
+      if (
+        errorMessage?.includes("Authentifizierungsfehler") ||
+        errorMessage?.includes("Rate Limit") ||
+        errorMessage?.includes("Quota")
+      ) {
         this.state.status = "paused";
         this.state.errorMessage = errorMessage;
-      } else if (nextItem.retries < nextItem.maxRetries) {
-        // Retry with backoff
-        const retriedItem: AiQueueItem = {
-          ...nextItem,
-          retries: nextItem.retries + 1,
+      } else if (item.retries < item.maxRetries) {
+        this.state.queue.push({
+          ...item,
+          retries: item.retries + 1,
           status: "queued",
-          error: `Versuch ${nextItem.retries + 1} fehlgeschlagen: ${errorMessage}`,
-        };
-        this.state.queue.push(retriedItem);
+          error: `Versuch ${item.retries + 1} fehlgeschlagen: ${errorMessage}`,
+        });
       }
     } finally {
+      this.abortControllers.delete(itemKey);
+      this.activeCount = Math.max(0, this.activeCount - 1);
+      this.state.activeItems = this.state.activeItems.filter((a) => String(a.id) !== itemKey);
+      this.state.currentItem = this.state.activeItems[0] || null;
+
       const durationMs = Math.round(performance.now() - startTime);
 
-      // Log entry
       const logEntry: AiActivityEntry = {
         id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        mailId: nextItem.id,
-        subject: nextItem.subject,
-        sender: nextItem.name ? `${nextItem.name} <${nextItem.email}>` : nextItem.email,
+        mailId: item.id,
+        subject: item.subject,
+        sender: item.name ? `${item.name} <${item.email}>` : item.email,
         category: result?.category,
+        categoryConfidence: result?.categoryConfidence,
         tags: result?.tags,
         status: result ? "success" : "error",
         durationMs,
+        deciderLatencyMs: result?._debug?.stages?.decider?.durationMs,
+        extractorLatencyMs: result?._debug?.stages?.extractor?.durationMs,
+        extractorSkipped: result?.pipeline?.extractorSkipped,
         promptTokens: result?._debug?.promptTokens,
         completionTokens: result?._debug?.completionTokens,
+        costUsd: result?._debug?.totalCostUsd,
         model: result?._debug?.model,
+        trigger: item.trigger || "manual",
         timestamp: Date.now(),
         error: errorMessage,
       };
 
       this.state.activityLog = [logEntry, ...this.state.activityLog.slice(0, MAX_ACTIVITY_LOG - 1)];
-      this.updateStatsOnResult(
-        Boolean(result),
-        durationMs,
-        result?._debug?.promptTokens,
-        result?._debug?.completionTokens
-      );
+      this.updateStatsOnResult(Boolean(result), durationMs, result);
       this.saveActivity();
 
       this.state.batchCompleted++;
-      this.abortController = null;
-      this.isProcessing = false;
+      this.notify();
 
-      // Seamless Transition:
-      if (this.state.status !== "paused" && this.state.queue.length > 0) {
-        // Keep currentItem during the brief interval to prevent layout collapse / flicker
-        this.notify();
-        setTimeout(() => this.processNext(), 150);
-      } else {
-        const total = Math.max(this.state.batchTotal, this.state.batchCompleted, 1);
-        const lastBatchLogs = this.state.activityLog.slice(0, total);
-        const errCount = lastBatchLogs.filter((a) => a.status === "error").length;
-        const succCount = total - errCount;
-
-        this.state.currentItem = null;
-        if (this.state.status !== "paused") {
-          this.state.status = "completed";
-          this.state.lastBatchSummary = {
-            total,
-            success: succCount,
-            error: errCount,
-            finishedAt: Date.now(),
-          };
-          this.state.batchTotal = 0;
-          this.state.batchCompleted = 0;
+      if (this.state.status !== "paused") {
+        if (this.state.queue.length > 0) {
+          setTimeout(() => this.pumpQueue(), 120);
+        } else if (this.activeCount === 0) {
+          this.finishBatch();
         }
-        this.notify();
-
-        // Auto-dismiss completed state after 4.5 seconds
-        setTimeout(() => {
-          if (this.state.status === "completed") {
-            this.state.status = "idle";
-            this.state.lastBatchSummary = null;
-            this.notify();
-          }
-        }, 4500);
       }
     }
   }
 }
 
-// Singleton Instance
 export const aiQueue = new AiQueueManager();
 
-// Helper React hook for clean UI reactivity
 import { useState, useEffect } from "react";
 
 export function useAiQueue() {
@@ -598,6 +748,8 @@ export function useAiQueue() {
   return {
     ...state,
     enqueue: (items: any[], options?: any) => aiQueue.enqueueEmails(items, options),
+    enqueueNewIncomingEmail: (mail: any, folder?: string) =>
+      aiQueue.enqueueNewIncomingEmail(mail, folder),
     start: () => aiQueue.start(),
     pause: () => aiQueue.pause(),
     resume: () => aiQueue.resume(),

@@ -1,6 +1,7 @@
 import PostalMime from "postal-mime";
 import { resolveMailboxPath } from "../utils/imapHelpers.js";
 import { getImapClient, evictClient } from "../utils/imapPool.js";
+import { extractHeaderSignals } from "./ai/heuristics.ts";
 import {
   getPocketBaseClient,
   isPocketBaseAvailable,
@@ -310,6 +311,7 @@ export async function syncMailbox(
                 read: isRead,
                 flagged: isFlagged,
                 attachments: attachmentsMeta,
+                header_signals: extractHeaderSignals(parsed.headers, attachmentsMeta),
               };
 
               await pb.collection("email_records").create(record);

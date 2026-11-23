@@ -235,15 +235,15 @@ if (Astro.request.method === "POST") {
           <div class="flex items-center justify-between border-b pb-3">
             <div class="flex items-center gap-2">
               <span class="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary text-[11px] font-bold">2</span>
-              <h2 class="text-xs font-semibold uppercase tracking-wider text-foreground">Eigener KI-Endpunkt</h2>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-foreground">KI-Endpunkt (Clef, Clairic oder eigener Server)</h2>
             </div>
-            <span class="text-[11px] text-muted-foreground font-mono">OpenAI-kompatibles Protokoll</span>
+            <span class="text-[11px] text-muted-foreground font-mono">OpenRouter / System One / OpenAI</span>
           </div>
 
           <div class="p-3 rounded-xl bg-muted/40 border border-border/60 text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2.5">
             <span class="text-primary text-xs shrink-0 mt-0.5 font-bold">ℹ</span>
             <span>
-              Verbinde deinen eigenen KI-Server (z.&nbsp;B. vLLM, LM Studio, Ollama, LocalAI). Die Kommunikation erfolgt über die standardisierte OpenAI-kompatible Schnittstelle (<code>/v1</code>) direkt mit deinem Server – <strong>keine</strong> Nutzung der OpenAI Cloud.
+              Nutze <strong>OpenRouter</strong> (<code>https://openrouter.ai/api</code> mit <code>cloudflare/clef-flash</code> &amp; <code>cloudflare/clairic</code>) oder deinen eigenen Server (vLLM, SGLang, Ollama, LM Studio). Nach dem Erstabruf werden bestehende E-Mails <strong>nicht</strong> automatisch analysiert — du kannst die Analyse danach gezielt in den Einstellungen starten.
             </span>
           </div>
 

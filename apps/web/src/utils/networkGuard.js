@@ -68,6 +68,9 @@ export function validateImapHost(host, port, options = {}) {
 
 export function validateAiUrl(urlStr, options = {}) {
   const allowLocalhost = options.allowLocalhost ?? (process.env.NODE_ENV !== "production");
+  const allowPrivateLan =
+    options.allowPrivateLan ?? (process.env.ALLOW_PRIVATE_AI_HOSTS === "true");
+
   if (!urlStr || typeof urlStr !== "string") {
     return { valid: false, error: "URL must be a non-empty string." };
   }
@@ -84,10 +87,25 @@ export function validateAiUrl(urlStr, options = {}) {
   }
 
   const host = parsed.hostname.toLowerCase();
+
+  // Cloud metadata & link-local addresses are ALWAYS blocked, even with ALLOW_PRIVATE_AI_HOSTS
+  if (/^169\.254\./.test(host) || /^fe80:/i.test(host) || host === "metadata.google.internal") {
+    return {
+      valid: false,
+      error: "AI endpoint cannot point to cloud metadata or link-local addresses.",
+    };
+  }
+
   const isPrivate = isPrivateOrReservedHost(host);
 
   if (isPrivate) {
-    if (allowLocalhost && (host === "localhost" || host === "127.0.0.1")) {
+    if (allowLocalhost && (host === "localhost" || host === "127.0.0.1" || host === "[::1]")) {
+      return { valid: true, url: parsed.toString() };
+    }
+    if (
+      allowPrivateLan &&
+      (/^10\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) || /^192\.168\./.test(host))
+    ) {
       return { valid: true, url: parsed.toString() };
     }
     return {

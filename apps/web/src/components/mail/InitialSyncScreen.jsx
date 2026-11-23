@@ -27,6 +27,7 @@ function formatDate(dateString) {
 export function InitialSyncScreen({
   folder = "inbox",
   onComplete,
+  onOpenAiSettings,
   onCancel,
 }) {
   const [syncState, setSyncState] = useState({
@@ -72,7 +73,8 @@ export function InitialSyncScreen({
           }
         }
 
-        // When sync finishes and has completed at least one pass
+        // When sync finishes and has completed at least one pass:
+        // Do NOT auto-start bulk AI analysis — let the user decide.
         if (
           !data.isSyncing &&
           (data.totalInDb > 0 || data.lastSyncTime) &&
@@ -80,9 +82,6 @@ export function InitialSyncScreen({
         ) {
           completedTriggeredRef.current = true;
           setIsCompleted(true);
-          setTimeout(() => {
-            if (onComplete) onComplete();
-          }, 900);
         }
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -251,29 +250,66 @@ export function InitialSyncScreen({
             </div>
           </div>
 
-          {/* Action Buttons: Cancel & Skip */}
-          <div className="flex flex-wrap items-center gap-2.5 pt-1 w-full justify-center md:justify-start">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleAbortAndContinue}
-              className="text-xs h-8 gap-1.5 font-medium border-border/80 shadow-xs hover:bg-muted"
-              title="Synchronisation abbrechen und direkt zum Postfach wechseln"
-            >
-              <ArrowRight className="w-3.5 h-3.5" />
-              Abbrechen & zum Postfach
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleCancelAndLogout}
-              className="text-xs h-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
-              title="Abbrechen und zu den Anmeldeeinstellungen zurückkehren"
-            >
-              <X className="w-3.5 h-3.5" />
-              Abbrechen & Abmelden
-            </Button>
-          </div>
+          {/* Action Buttons: Post-Import User Control vs. Cancel & Skip */}
+          {isCompleted ? (
+            <div className="w-full space-y-3 pt-1">
+              <div className="rounded-xl border border-border/80 bg-muted/40 p-3 text-left text-xs text-muted-foreground leading-relaxed">
+                <p className="font-semibold text-foreground mb-0.5 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
+                  Keine automatische Massenanalyse gestartet
+                </p>
+                <p>
+                  Deine bestehenden E-Mails werden erst auf deinen Wunsch hin analysiert (alle oder einzeln).
+                  Zukünftig neu eintreffende E-Mails werden automatisch einzeln eingeordnet.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 w-full justify-center md:justify-start">
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => onComplete && onComplete()}
+                  className="text-xs h-9 px-4 gap-1.5 font-medium shadow-xs cursor-pointer"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  Direkt ins Postfach
+                </Button>
+                {onOpenAiSettings && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onOpenAiSettings()}
+                    className="text-xs h-9 px-4 gap-1.5 font-medium border-primary/40 text-primary hover:bg-primary/5 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    KI-Analyse einrichten & starten
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2.5 pt-1 w-full justify-center md:justify-start">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleAbortAndContinue}
+                className="text-xs h-8 gap-1.5 font-medium border-border/80 shadow-xs hover:bg-muted cursor-pointer"
+                title="Synchronisation abbrechen und direkt zum Postfach wechseln"
+              >
+                <ArrowRight className="w-3.5 h-3.5" />
+                Abbrechen & zum Postfach
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCancelAndLogout}
+                className="text-xs h-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5 cursor-pointer"
+                title="Abbrechen und zu den Anmeldeeinstellungen zurückkehren"
+              >
+                <X className="w-3.5 h-3.5" />
+                Abbrechen & Abmelden
+              </Button>
+            </div>
+          )}
 
           {/* Live Feature Badges */}
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-1 text-xs text-muted-foreground">

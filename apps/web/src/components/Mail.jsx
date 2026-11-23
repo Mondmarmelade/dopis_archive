@@ -49,10 +49,26 @@ import {
   setCachedAnalysis,
   toggleCachedActionItem,
   getAiSettings,
+  getSyncBaseline,
+  setSyncBaseline,
+  buildBaselineFromMails,
+  findNewEmailsSinceBaseline,
 } from "@/lib/aiCache";
 import { prefetchEmail } from "@/lib/emailCache";
 import { aiQueue, useAiQueue } from "@/lib/aiQueue";
 import { groupMailsIntoThreads } from "@/lib/threadEngine";
+
+const CATEGORY_FILTERS = [
+  "Alle",
+  "Dringend",
+  "Persönlich",
+  "Rechnung",
+  "Benachrichtigung",
+  "Newsletter",
+  "Werbung",
+  "Update",
+  "Spam",
+];
 
 export function Mail({
   defaultLayout = [18, 36, 46],
@@ -71,6 +87,7 @@ export function Mail({
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("Alle");
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedMailId, setSelectedMailId] = useState(null);
   const [isInitialSyncNeeded, setIsInitialSyncNeeded] = useState(() => {
@@ -114,67 +131,73 @@ export function Mail({
   const [aiError, setAiError] = useState(null);
 
   // Analyze a specific email with the AI API
-  const analyzeEmail = useCallback(async (mailItem, fullText = "", fullHtml = "", force = false) => {
-    if (!mailItem) return null;
-    const id = mailItem.id || mailItem.seq;
+  const analyzeEmail = useCallback(
+    async (mailItem, fullText = "", fullHtml = "", force = false, forceTextSummary = false) => {
+      if (!mailItem) return null;
+      const id = mailItem.id || mailItem.seq;
 
-    if (!force) {
-      const cached = getCachedAnalysis(id);
-      if (cached) {
-        setAiMap((prev) => ({ ...prev, [id]: cached }));
-        return cached;
-      }
-    }
-
-    const startTime = performance.now();
-    try {
-      const settings = getAiSettings();
-      const res = await fetch("/api/ai/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          seq: id,
-          folder: currentFolder,
-          date: mailItem.date || new Date().toISOString(),
-          subject: mailItem.subject || "",
-          from: mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
-          text: fullText,
-          html: fullHtml,
-          settings,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.error || `AI API Fehler (${res.status})`);
+      if (!force && !forceTextSummary) {
+        const cached = mailItem.aiAnalysis || getCachedAnalysis(id);
+        if (cached) {
+          setAiMap((prev) => ({ ...prev, [id]: cached }));
+          return cached;
+        }
       }
 
-      const result = await res.json();
-      const durationMs = Math.round(performance.now() - startTime);
-      setCachedAnalysis(id, result);
-      setAiMap((prev) => ({ ...prev, [id]: result }));
-      aiQueue.logExternalAnalysis(
-        id,
-        mailItem.subject || "",
-        mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
-        result,
-        durationMs
-      );
-      return result;
-    } catch (err) {
-      const durationMs = Math.round(performance.now() - startTime);
-      aiQueue.logExternalAnalysis(
-        id,
-        mailItem.subject || "",
-        mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
-        null,
-        durationMs,
-        err.message
-      );
-      console.warn(`AI analysis failed for email ${id}:`, err.message);
-      throw err;
-    }
-  }, []);
+      const startTime = performance.now();
+      try {
+        const settings = getAiSettings();
+        const res = await fetch("/api/ai/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            seq: mailItem.seq || id,
+            id,
+            folder: selectedFolder === "newsletters" ? "inbox" : selectedFolder,
+            date: mailItem.date || new Date().toISOString(),
+            subject: mailItem.subject || "",
+            from: mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
+            text: fullText,
+            html: fullHtml,
+            headers: mailItem.headerSignals || null,
+            settings,
+            forceTextSummary,
+          }),
+        });
+
+        if (!res.ok) {
+          const errorJson = await res.json().catch(() => ({}));
+          throw new Error(errorJson.error || `AI API Fehler (${res.status})`);
+        }
+
+        const result = await res.json();
+        const durationMs = Math.round(performance.now() - startTime);
+        setCachedAnalysis(id, result);
+        setAiMap((prev) => ({ ...prev, [id]: result }));
+        aiQueue.logExternalAnalysis(
+          id,
+          mailItem.subject || "",
+          mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
+          result,
+          durationMs
+        );
+        return result;
+      } catch (err) {
+        const durationMs = Math.round(performance.now() - startTime);
+        aiQueue.logExternalAnalysis(
+          id,
+          mailItem.subject || "",
+          mailItem.name ? `${mailItem.name} <${mailItem.email}>` : mailItem.email || "",
+          null,
+          durationMs,
+          err.message
+        );
+        console.warn(`AI analysis failed for email ${id}:`, err.message);
+        throw err;
+      }
+    },
+    [selectedFolder]
+  );
 
   // Fetch emails with Stale-While-Revalidate caching pattern
   const fetchEmails = useCallback(async (isManualRefresh = false, folderToLoad = selectedFolder) => {
@@ -196,7 +219,8 @@ export function Mail({
     }
 
     try {
-      const res = await fetch(`/api/emails?folder=${folderToLoad}`);
+      const apiFolder = folderToLoad === "newsletters" ? "inbox" : folderToLoad;
+      const res = await fetch(`/api/emails?folder=${apiFolder}`);
       if (!res.ok) {
         if (res.status === 401) {
           window.location.href = "/logout";
@@ -212,19 +236,28 @@ export function Mail({
       }
       setInitialCheckComplete(true);
       const fetchedMails = data.msgs || [];
+      const resolvedAccount = data.account || accountEmail || "";
 
       // Update in-memory cache
       folderCacheRef.current[folderToLoad] = fetchedMails;
+      if (apiFolder === "inbox") {
+        folderCacheRef.current["inbox"] = fetchedMails;
+      }
       setMails(fetchedMails);
-      setAccountEmail(data.account || "");
+      setAccountEmail(resolvedAccount);
 
-      // Populate AI map from localStorage cache
+      // Hydrate AI map from PocketBase SQLite first, then localStorage cache
       const initialAiMap = {};
       fetchedMails.forEach((m) => {
         const id = m.id || m.seq;
-        const cached = getCachedAnalysis(id);
-        if (cached) {
-          initialAiMap[id] = cached;
+        if (m.aiAnalysis) {
+          initialAiMap[id] = m.aiAnalysis;
+          setCachedAnalysis(id, m.aiAnalysis);
+        } else {
+          const cached = getCachedAnalysis(id);
+          if (cached) {
+            initialAiMap[id] = cached;
+          }
         }
       });
       setAiMap((prev) => ({ ...prev, ...initialAiMap }));
@@ -238,15 +271,34 @@ export function Mail({
 
         // Prefetch top 3 emails in background for zero-latency instant opening
         fetchedMails.slice(0, 3).forEach((m) => {
-          prefetchEmail(m.id || m.seq, folderToLoad);
+          prefetchEmail(m.id || m.seq, apiFolder);
         });
       } else {
         setSelectedMailId(null);
       }
 
-      // Schedule background scan in idle time if auto-queue is enabled
-      if (aiQueue.getState().isAutoQueueEnabled) {
-        aiQueue.enqueueEmails(fetchedMails, { onlyUnread: true, folder: folderToLoad });
+      // Baseline check: NEVER auto-analyze existing emails after initial setup/import.
+      // Only genuinely NEW incoming emails arriving after the baseline are queued individually.
+      if (resolvedAccount && fetchedMails.length > 0 && apiFolder === "inbox") {
+        const existingBaseline = getSyncBaseline(resolvedAccount, "inbox");
+        if (!existingBaseline) {
+          // Record initial baseline silently — no automatic bulk analysis!
+          setSyncBaseline(resolvedAccount, "inbox", buildBaselineFromMails(fetchedMails));
+        } else {
+          const newlyArrived = findNewEmailsSinceBaseline(fetchedMails, existingBaseline);
+          if (newlyArrived.length > 0) {
+            // Update baseline immediately so each new email is only auto-queued once
+            setSyncBaseline(resolvedAccount, "inbox", buildBaselineFromMails(fetchedMails));
+            const aiCfg = getAiSettings();
+            if (aiCfg.autoAnalyzeNewEmails !== false) {
+              newlyArrived.forEach((newMail) => {
+                if (!newMail.aiAnalysis && !getCachedAnalysis(newMail.id || newMail.seq)) {
+                  aiQueue.enqueueNewIncomingEmail(newMail, "inbox");
+                }
+              });
+            }
+          }
+        }
       }
     } catch (err) {
       if (!isCached) {
@@ -256,7 +308,7 @@ export function Mail({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedFolder]);
+  }, [selectedFolder, accountEmail]);
 
   // Instant folder switching with SWR Cache
   const handleSelectFolder = useCallback((newFolder) => {
@@ -265,6 +317,7 @@ export function Mail({
       setSelectedFolder(newFolder);
       setSearchQuery("");
       setActiveTab("all");
+      setCategoryFilter("Alle");
 
       // Check if folder is already cached in memory for INSTANT 0ms switch
       if (newFolder === "newsletters" && folderCacheRef.current["inbox"]) {
@@ -279,17 +332,37 @@ export function Mail({
     fetchEmails(false, selectedFolder);
   }, [selectedFolder, fetchEmails]);
 
-  // 60-second periodic delta sync with IMAP in background
+  // Keep aiMap live-synced whenever the background queue finishes an email
+  useEffect(() => {
+    return aiQueue.subscribe(() => {
+      const latest = aiQueue.getState().activityLog[0];
+      if (latest && latest.status === "success" && latest.mailId) {
+        const cached = getCachedAnalysis(latest.mailId);
+        if (cached) {
+          setAiMap((prev) => ({ ...prev, [latest.mailId]: cached }));
+        }
+      }
+    });
+  }, []);
+
+  // 60-second periodic delta sync with IMAP in background (triggers single-mail analysis for new arrivals)
   useEffect(() => {
     const timer = setInterval(() => {
+      const targetFolder = selectedFolder === "newsletters" ? "inbox" : selectedFolder;
       fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: selectedFolder, blocking: false }),
-      }).catch(() => {});
+        body: JSON.stringify({ folder: targetFolder, blocking: false }),
+      })
+        .then((res) => {
+          if (res.ok && targetFolder === "inbox") {
+            setTimeout(() => fetchEmails(false, "inbox"), 2500);
+          }
+        })
+        .catch(() => {});
     }, 60000);
     return () => clearInterval(timer);
-  }, [selectedFolder]);
+  }, [selectedFolder, fetchEmails]);
 
   // Update AI insights for selected email (loads from cache if available without auto-analyzing)
   useEffect(() => {
@@ -349,9 +422,30 @@ export function Mail({
     setAiError(null);
 
     try {
-      const detailRes = await fetch(`/api/email?seq=${selectedMailId}&folder=${selectedFolder}`);
+      const apiFolder = selectedFolder === "newsletters" ? "inbox" : selectedFolder;
+      const detailRes = await fetch(`/api/email?seq=${selectedMailId}&folder=${apiFolder}`);
       const detail = detailRes.ok ? await detailRes.json() : null;
-      await analyzeEmail(target, detail?.text || "", detail?.html || "", true);
+      await analyzeEmail(target, detail?.text || "", detail?.html || "", true, false);
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [selectedMailId, selectedFolder, mails, analyzeEmail]);
+
+  const handleRequestTextSummary = useCallback(async () => {
+    if (!selectedMailId) return;
+    const target = mails.find((m) => String(m.id || m.seq) === String(selectedMailId));
+    if (!target) return;
+
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      const apiFolder = selectedFolder === "newsletters" ? "inbox" : selectedFolder;
+      const detailRes = await fetch(`/api/email?seq=${selectedMailId}&folder=${apiFolder}`);
+      const detail = detailRes.ok ? await detailRes.json() : null;
+      await analyzeEmail(target, detail?.text || "", detail?.html || "", true, true);
     } catch (err) {
       setAiError(err.message);
     } finally {
@@ -527,6 +621,22 @@ export function Mail({
     return groupMailsIntoThreads(enrichedMails, aiMap);
   }, [enrichedMails, aiMap]);
 
+  // Category counts for the horizontal filter bar
+  const categoryCounts = useMemo(() => {
+    const counts = { Alle: threads.length };
+    threads.forEach((thread) => {
+      const cats = new Set();
+      thread.mails.forEach((m) => {
+        const cat = m.ai?.category || m.aiCategory;
+        if (cat) cats.add(cat);
+      });
+      cats.forEach((cat) => {
+        counts[cat] = (counts[cat] || 0) + 1;
+      });
+    });
+    return counts;
+  }, [threads]);
+
   // Filtered threads list
   const filteredThreads = useMemo(() => {
     return threads.filter((thread) => {
@@ -536,15 +646,25 @@ export function Mail({
 
       if (selectedFolder === "newsletters") {
         const isNewsletter = thread.mails.some((m) => {
-          const cat = m.ai?.category?.toLowerCase();
+          const cat = (m.ai?.category || m.aiCategory || "").toLowerCase();
+          const clefNewsletter = (m.ai?.signals?.isNewsletter ?? 0) >= 0.6;
+          const headerUnsub = Boolean(m.headerSignals?.hasListUnsubscribe);
           return (
             cat === "newsletter" ||
-            cat === "werbung" ||
-            cat === "angebote" ||
+            clefNewsletter ||
+            (headerUnsub && cat !== "rechnung" && cat !== "persönlich" && cat !== "dringend") ||
             m.subject?.toLowerCase().includes("newsletter")
           );
         });
         if (!isNewsletter) return false;
+      }
+
+      if (categoryFilter !== "Alle") {
+        const matchesCat = thread.mails.some((m) => {
+          const cat = m.ai?.category || m.aiCategory || "";
+          return cat.toLowerCase() === categoryFilter.toLowerCase();
+        });
+        if (!matchesCat) return false;
       }
 
       if (searchQuery.trim().length > 0) {
@@ -553,8 +673,8 @@ export function Mail({
           const matchSubject = mail.subject?.toLowerCase().includes(q);
           const matchName = mail.name?.toLowerCase().includes(q);
           const matchEmail = mail.email?.toLowerCase().includes(q);
-          const matchCategory = mail.ai?.category?.toLowerCase().includes(q);
-          const matchTags = mail.ai?.tags?.some((t) => t.toLowerCase().includes(q));
+          const matchCategory = (mail.ai?.category || mail.aiCategory || "").toLowerCase().includes(q);
+          const matchTags = (mail.ai?.tags || mail.aiTags || []).some((t) => t.toLowerCase().includes(q));
           const matchProduct = thread.orderJourney?.productSummary?.toLowerCase().includes(q);
           const matchMerchant = thread.orderJourney?.merchant?.toLowerCase().includes(q);
           const matchOrder = thread.orderJourney?.orderId?.toLowerCase().includes(q);
@@ -584,7 +704,7 @@ export function Mail({
 
       return true;
     });
-  }, [threads, activeTab, selectedFolder, searchQuery]);
+  }, [threads, activeTab, selectedFolder, categoryFilter, searchQuery]);
 
   const unreadCount = useMemo(() => mails.filter((m) => !m.read).length, [mails]);
 
@@ -801,6 +921,11 @@ export function Mail({
           setIsInitialSyncNeeded(false);
           fetchEmails(true, selectedFolder);
         }}
+        onOpenAiSettings={() => {
+          setIsInitialSyncNeeded(false);
+          setCurrentView("settings");
+          fetchEmails(true, selectedFolder);
+        }}
         onCancel={() => {
           setIsInitialSyncNeeded(false);
           fetchEmails(true, selectedFolder);
@@ -922,7 +1047,12 @@ export function Mail({
         {currentView === "settings" ? (
           <ResizablePanel defaultSize={defaultLayout[1] + defaultLayout[2]} minSize={50} className="bg-background">
             <div className="h-full overflow-hidden flex flex-col">
-              <SettingsForm onBack={() => setCurrentView("mails")} />
+              <SettingsForm
+                folderMails={mails}
+                currentFolder={selectedFolder === "newsletters" ? "inbox" : selectedFolder}
+                onOpenAiActivity={() => setCurrentView("ai-activity")}
+                onBack={() => setCurrentView("mails")}
+              />
             </div>
           </ResizablePanel>
         ) : currentView === "orders-receipts" ? (
@@ -1065,6 +1195,41 @@ export function Mail({
                 {/* Quick Onboarding / Tips Bar */}
                 <QuickTipsBar onOpenShortcuts={() => setIsShortcutsModalOpen(true)} />
 
+                {/* Category Filter Chips (populated from Clef/SQLite classifications) */}
+                {selectedFolder !== "newsletters" && Object.keys(categoryCounts).length > 1 && (
+                  <div className="px-3 pb-2 flex items-center gap-1 overflow-x-auto no-scrollbar shrink-0">
+                    {CATEGORY_FILTERS.filter((cat) => cat === "Alle" || (categoryCounts[cat] || 0) > 0).map(
+                      (cat) => {
+                        const count = categoryCounts[cat] || 0;
+                        const active = categoryFilter === cat;
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => setCategoryFilter(cat)}
+                            className={cn(
+                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors shrink-0 cursor-pointer",
+                              active
+                                ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                                : "bg-muted/40 text-muted-foreground border-border/70 hover:bg-muted hover:text-foreground"
+                            )}
+                          >
+                            <span>{cat}</span>
+                            <span
+                              className={cn(
+                                "text-[10px] font-mono tabular-nums",
+                                active ? "text-primary-foreground/80" : "text-muted-foreground/80"
+                              )}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                )}
+
                 {/* Mail Items Scrollable Area */}
                 <div className="flex-1 overflow-y-auto">
                   {loading && mails.length === 0 ? (
@@ -1121,6 +1286,7 @@ export function Mail({
                 aiLoading={aiLoading || Boolean(currentItem && String(currentItem.id) === String(selectedMailId))}
                 aiError={aiError}
                 onReanalyze={handleReanalyze}
+                onRequestTextSummary={handleRequestTextSummary}
                 onToggleActionItem={handleToggleActionItem}
                 onOpenShortcutsModal={() => setIsShortcutsModalOpen(true)}
                 onToggleRead={() => {

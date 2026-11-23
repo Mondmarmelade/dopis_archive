@@ -27,6 +27,14 @@ test("2. PocketBase Schema Migration Integrity", () => {
   assert.ok(content.includes('"email_records"'), "Schema must define email_records collection");
   assert.ok(content.includes('"tracking_number"'), "orders collection must have tracking_number field");
   assert.ok(content.includes('"file"'), "receipts collection must have file field");
+
+  const aiMigrationPath = path.join(rootDir, "pb_migrations/1795000000_add_ai_analysis_to_email_records.js");
+  assert.ok(fs.existsSync(aiMigrationPath), "AI fields migration file must exist");
+  const aiMigContent = fs.readFileSync(aiMigrationPath, "utf-8");
+  assert.ok(aiMigContent.includes('"ai_category"'), "AI migration must define ai_category");
+  assert.ok(aiMigContent.includes('"ai_confidence"'), "AI migration must define ai_confidence");
+  assert.ok(aiMigContent.includes('"ai_analysis"'), "AI migration must define ai_analysis");
+  assert.ok(aiMigContent.includes('"header_signals"'), "AI migration must define header_signals");
 });
 
 test("3. PocketBase Client Module & Offline Resilience", async () => {

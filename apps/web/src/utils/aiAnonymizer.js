@@ -38,17 +38,27 @@ export function anonymizePii(text) {
     "[PLZ ORT]"
   );
 
-  // 6. Phone Numbers (e.g. +49 170 1234567, 030 / 123456, 0171-9876543)
+  // 6. Phone Numbers (e.g. +49 170 1234567, 030 / 123456, 0171-9876543, Tel: 089 123456)
+  // Carefully avoids redacting order numbers (e.g. 302-1234567-8901234), DHL tracking IDs, or dates.
   sanitized = sanitized.replace(
-    /(?:\+?[0-9]{1,4}[\s\-/]?)?(?:\(?0[0-9]{2,5}\)?[\s\-/]?)?[0-9]{3,8}[\s\-/]?[0-9]{2,8}/g,
+    /(?:(?:\b(?:Tel(?:efon)?|Phone|Mobil|Mobile|Fax|Hotline|Rufnummer)\.?\s*[:\-]?\s*)|(?:\+|00)[1-9][0-9]{0,2}[\s\-./]?|\(?0[1-9][0-9]{1,4}\)?[\s\-/])(?:\(?[0-9]{1,5}\)?[\s\-./]?){1,4}[0-9]{2,6}\b/gi,
     (match) => {
-      // Don't redact dates (e.g. 2026-08-25) or times (18:45)
-      if (match.includes(":") || match.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      // Never redact ISO dates, timestamps, or 3-part Amazon-style order numbers (e.g. 302-1234567-8901234)
+      if (
+        match.includes(":") && !/^(?:Tel|Phone|Mobil|Mobile|Fax|Hotline|Rufnummer)/i.test(match)
+      ) {
+        return match;
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(match.trim())) {
+        return match;
+      }
+      if (/^\d{3}-\d{7}-\d{7}$/.test(match.trim())) {
         return match;
       }
       const digitsOnly = match.replace(/\D/g, "");
       if (digitsOnly.length >= 7 && digitsOnly.length <= 15) {
-        return "[TELEFON]";
+        const labelMatch = match.match(/^((?:Tel(?:efon)?|Phone|Mobil|Mobile|Fax|Hotline|Rufnummer)\.?\s*[:\-]?\s*)/i);
+        return labelMatch ? `${labelMatch[1]}[TELEFON]` : "[TELEFON]";
       }
       return match;
     }

@@ -57,6 +57,21 @@ export async function GET({ cookies, params, request }) {
           ],
           hasReceipt: Boolean(r.has_receipt),
           isOrder: Boolean(r.is_order),
+          aiCategory: r.ai_category || r.ai_analysis?.category || null,
+          aiConfidence:
+            typeof r.ai_confidence === "number"
+              ? r.ai_confidence
+              : typeof r.ai_analysis?.categoryConfidence === "number"
+              ? r.ai_analysis.categoryConfidence
+              : null,
+          aiTags: Array.isArray(r.ai_tags)
+            ? r.ai_tags
+            : Array.isArray(r.ai_analysis?.tags)
+            ? r.ai_analysis.tags
+            : [],
+          aiAnalysis: r.ai_analysis || null,
+          aiAnalyzedAt: r.ai_analyzed_at || null,
+          headerSignals: r.header_signals || null,
         }));
 
         // Trigger background delta sync if not syncing and last sync > 60s ago

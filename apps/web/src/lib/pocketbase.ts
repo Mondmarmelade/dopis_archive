@@ -65,6 +65,12 @@ export interface PbEmailRecord {
   cc?: any[];
   from?: any;
   ai_summary?: any;
+  ai_category?: string;
+  ai_confidence?: number;
+  ai_tags?: string[];
+  ai_analysis?: any;
+  ai_analyzed_at?: string;
+  header_signals?: any;
   has_receipt?: boolean;
   is_order?: boolean;
   created?: string;
@@ -256,6 +262,12 @@ export async function ensurePocketBaseSchema(): Promise<void> {
             { name: "cc", type: "json" },
             { name: "from", type: "json" },
             { name: "ai_summary", type: "json" },
+            { name: "ai_category", type: "text" },
+            { name: "ai_confidence", type: "number" },
+            { name: "ai_tags", type: "json" },
+            { name: "ai_analysis", type: "json" },
+            { name: "ai_analyzed_at", type: "text" },
+            { name: "header_signals", type: "json" },
             { name: "has_receipt", type: "bool" },
             { name: "is_order", type: "bool" },
           ],
@@ -264,13 +276,28 @@ export async function ensurePocketBaseSchema(): Promise<void> {
         console.warn("Could not create 'email_records' collection:", e?.message);
       }
     } else {
-      // If collection already exists, ensure html and text max limits are increased to 10MB
+      // If collection already exists, ensure html/text limits and AI fields are present
       try {
         const emailCol = await pb.collections.getOne("email_records");
         let modified = false;
+        const existingFieldNames = new Set((emailCol.fields || []).map((f: any) => f.name));
         for (const field of (emailCol.fields || [])) {
           if ((field.name === "html" || field.name === "text") && (!field.max || field.max < 10000000)) {
             field.max = 10000000;
+            modified = true;
+          }
+        }
+        const requiredAiFields = [
+          { name: "ai_category", type: "text" },
+          { name: "ai_confidence", type: "number" },
+          { name: "ai_tags", type: "json" },
+          { name: "ai_analysis", type: "json" },
+          { name: "ai_analyzed_at", type: "text" },
+          { name: "header_signals", type: "json" },
+        ];
+        for (const f of requiredAiFields) {
+          if (!existingFieldNames.has(f.name)) {
+            emailCol.fields.push(f);
             modified = true;
           }
         }

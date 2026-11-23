@@ -150,7 +150,7 @@ export function AiActivityView({ currentFolder = "inbox", folderMails = [], onBa
   const pickerMails = useMemo(() => {
     return folderMails.map((mail, index) => {
       const id = mail.id || mail.seq;
-      const cached = getCachedAnalysis(id);
+      const cached = mail.aiAnalysis || getCachedAnalysis(id);
       const isCurrent = currentItem && String(currentItem.id) === String(id);
       const isQueued = queue.some((q) => String(q.id) === String(id));
       const lastLog = activityLog.find((a) => String(a.mailId) === String(id));
@@ -162,14 +162,22 @@ export function AiActivityView({ currentFolder = "inbox", folderMails = [], onBa
       else if (cached) aiStatus = "analyzed";
       else if (isError) aiStatus = "error";
 
+      const confidence =
+        typeof cached?.categoryConfidence === "number"
+          ? cached.categoryConfidence
+          : typeof mail.aiConfidence === "number"
+          ? mail.aiConfidence
+          : null;
+
       return {
         ...mail,
         indexNumber: index + 1,
         id,
         cached,
         aiStatus,
-        category: cached?.category || mail.category,
-        tags: cached?.tags || mail.tags || [],
+        confidence,
+        category: cached?.category || mail.aiCategory || mail.category,
+        tags: cached?.tags || mail.aiTags || mail.tags || [],
       };
     });
   }, [folderMails, currentItem, queue, activityLog]);
@@ -180,6 +188,9 @@ export function AiActivityView({ currentFolder = "inbox", folderMails = [], onBa
       if (pickerFilter === "unanalyzed" && mail.aiStatus === "analyzed") return false;
       if (pickerFilter === "unread" && mail.read) return false;
       if (pickerFilter === "analyzed" && mail.aiStatus !== "analyzed") return false;
+      if (pickerFilter === "review" && (mail.aiStatus !== "analyzed" || mail.confidence === null || mail.confidence >= 0.7)) {
+        return false;
+      }
 
       if (pickerSearch.trim()) {
         const q = pickerSearch.toLowerCase();
@@ -197,6 +208,24 @@ export function AiActivityView({ currentFolder = "inbox", folderMails = [], onBa
     () => pickerMails.filter((m) => m.aiStatus !== "analyzed").length,
     [pickerMails]
   );
+
+  const reviewCount = useMemo(
+    () =>
+      pickerMails.filter(
+        (m) => m.aiStatus === "analyzed" && m.confidence !== null && m.confidence < 0.7
+      ).length,
+    [pickerMails]
+  );
+
+  const categoryBreakdown = useMemo(() => {
+    const counts = {};
+    pickerMails.forEach((m) => {
+      if (m.aiStatus === "analyzed" && m.category) {
+        counts[m.category] = (counts[m.category] || 0) + 1;
+      }
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [pickerMails]);
 
   // Checkbox handlers
   const handleToggleSelect = (id) => {
@@ -350,6 +379,90 @@ export function AiActivityView({ currentFolder = "inbox", folderMails = [], onBa
 
       {/* Main Scrollable Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        {/* System One 2-Step Overview & Quick Actions */}
+        <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <h2 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                2-Schritt-Analyse ({aiSettings.deciderModel || "cloudflare/clef-flash"} → {aiSettings.extractorModel || "cloudflare/clairic"})
+              </h2>
+              <p className="text-[11px] text-muted-foreground">
+                <strong>1. Einordnen:</strong> Kategorie &amp; Dringlichkeit blitzschnell bestimmen ·{" "}
+                <strong>2. Auslesen:</strong> Nur bei Bestellungen, Rechnungen &amp; 2FA-Codes konkrete Felder und PDFs auslesen.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {unanalyzedCount > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    const pending = folderMails.filter((m) => {
+                      const id = m.id || m.seq;
+                      return !m.aiAnalysis && !getCachedAnalysis(id);
+                    });
+                    if (pending.length > 0) {
+                      enqueue(pending, { folder: currentFolder, trigger: "manual" });
+                    }
+                  }}
+                  className="h-7.5 text-xs gap-1.5 cursor-pointer"
+                >
+                  <Play className="h-3 w-3" />
+                  Alle {unanalyzedCount} offenen analysieren
+                </Button>
+              )}
+              {reviewCount > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={pickerFilter === "review" ? "secondary" : "outline"}
+                  onClick={() => {
+                    setActiveTab("picker");
+                    setPickerFilter(pickerFilter === "review" ? "unanalyzed" : "review");
+                  }}
+                  className="h-7.5 text-xs gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-300 cursor-pointer"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {reviewCount} unsichere prüfen
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground pt-1 border-t border-border/60">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/60 font-mono">
+              <Zap className="h-3 w-3 text-primary" />
+              Ø {avgLatency} ms
+            </span>
+            {stats.extractorSkippedCount > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium">
+                {stats.extractorSkippedCount}× Schritt 2 gespart
+              </span>
+            )}
+            {stats.totalCostUsd > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/60 font-mono">
+                ≈ ${stats.totalCostUsd.toFixed(4)}
+              </span>
+            )}
+            {categoryBreakdown.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 ml-auto">
+                {categoryBreakdown.slice(0, 6).map(([cat, count]) => (
+                  <span
+                    key={cat}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                      getCategoryColor(cat)
+                    )}
+                  >
+                    {cat}: {count}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Error Alert Banner if Fatal */}
         {errorMessage && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3.5 text-xs text-destructive flex items-center justify-between gap-3">

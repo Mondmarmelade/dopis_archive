@@ -1,5 +1,7 @@
-import { createAiClient } from "../../../utils/aiClient.js";
+import { resolvePipelineConfig } from "../../../utils/aiClient.js";
 import { getCredentials, handleOptions, jsonResponse } from "../../../utils/authHelper.js";
+import { testDeciderConnection } from "../../../lib/ai/decider.ts";
+import { testExtractorConnection } from "../../../lib/ai/extractor.ts";
 
 export async function OPTIONS() {
   return handleOptions();
@@ -11,13 +13,11 @@ export async function POST({ request, cookies }) {
   let body = {};
   try {
     body = await request.json();
-  } catch {
-    // empty body is fine, uses .env defaults
-  }
+  } catch {}
 
-  // If unauthenticated, allow testing only during onboarding setup with explicit endpoint
+  // Allow unauthenticated test during onboarding if explicit endpoint/preset is passed
   if (!credentials || credentials.length < 4) {
-    if (!body.baseUrl && !body.baseURL) {
+    if (!body.baseUrl && !body.baseURL && !body.deciderBaseUrl && !body.preset) {
       return jsonResponse(
         { error: "Unauthorized. Please provide a valid Bearer token or log in." },
         401
@@ -26,27 +26,36 @@ export async function POST({ request, cookies }) {
   }
 
   try {
-    const { client, model, config } = createAiClient(body);
+    const config = resolvePipelineConfig(body);
 
-    const response = await client.chat.completions.create({
-      model: model,
-      messages: [
-        {
-          role: "user",
-          content: "Respond with the single word 'OK' if you can read this message.",
+    const [deciderResult, extractorResult] = await Promise.all([
+      testDeciderConnection(config),
+      testExtractorConnection(config),
+    ]);
+
+    const allOk = deciderResult.ok && extractorResult.ok;
+
+    return jsonResponse(
+      {
+        success: allOk,
+        preset: config.preset,
+        endpoint: config.deciderBaseUrl,
+        model: `${config.deciderModel} + ${config.extractorModel}`,
+        stages: {
+          decider: deciderResult,
+          extractor: extractorResult,
         },
-      ],
-      max_tokens: 10,
-    });
-
-    const reply = response.choices?.[0]?.message?.content?.trim() || "";
-
-    return jsonResponse({
-      success: true,
-      endpoint: config.baseURL,
-      model: model,
-      reply,
-    });
+        error: allOk
+          ? undefined
+          : [
+              !deciderResult.ok ? `Schritt 1 (Einordnung): ${deciderResult.error}` : null,
+              !extractorResult.ok ? `Schritt 2 (Auslesung): ${extractorResult.error}` : null,
+            ]
+              .filter(Boolean)
+              .join(" | "),
+      },
+      allOk ? 200 : 502
+    );
   } catch (error) {
     console.error("AI connection test failed:", error);
     return jsonResponse(

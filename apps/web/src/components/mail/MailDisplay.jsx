@@ -99,6 +99,7 @@ export function MailDisplay({
   aiLoading,
   aiError,
   onReanalyze,
+  onRequestTextSummary,
   onToggleActionItem,
   onOpenShortcutsModal,
 }) {
@@ -472,6 +473,7 @@ export function MailDisplay({
           loading={aiLoading}
           error={aiError}
           onReanalyze={onReanalyze}
+          onRequestTextSummary={onRequestTextSummary}
           onToggleActionItem={onToggleActionItem}
         />
 

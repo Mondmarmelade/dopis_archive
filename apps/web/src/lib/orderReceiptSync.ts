@@ -220,31 +220,45 @@ export async function syncAnalysisToPocketBase(params: {
       }
     }
 
-    // 3. Save Email Record
+    // 3. Save Email Record with full persistent AI analysis
     try {
       let existingRecord: any = null;
-      try {
-        existingRecord = await pb
-          .collection("email_records")
-          .getFirstListItem(`user_email = "${userEmail}" && seq = ${mailSeq} && folder = "${mailFolder}"`);
-      } catch {}
+      const numericSeq = Number(mailSeq);
+      if (!Number.isNaN(numericSeq) && numericSeq > 0) {
+        try {
+          existingRecord = await pb
+            .collection("email_records")
+            .getFirstListItem(`user_email = "${userEmail}" && seq = ${numericSeq} && folder = "${mailFolder}"`);
+        } catch {}
+      }
 
-      const recordPayload: Partial<PbEmailRecord> = {
-        user_email: userEmail,
-        seq: Number(mailSeq),
-        folder: mailFolder,
-        subject: mailSubject,
-        sender_email: senderEmail,
-        sender_name: senderName,
-        date: mailDate,
+      const aiFields: Partial<PbEmailRecord> = {
         ai_summary: analysis.summary || [],
-        has_receipt: Boolean(createdOrUpdatedReceipt),
-        is_order: Boolean(createdOrUpdatedOrder),
+        ai_category: analysis.category || "Sonstiges",
+        ai_confidence:
+          typeof (analysis as any).categoryConfidence === "number"
+            ? (analysis as any).categoryConfidence
+            : undefined,
+        ai_tags: Array.isArray(analysis.tags) ? analysis.tags : [],
+        ai_analysis: analysis,
+        ai_analyzed_at: new Date().toISOString(),
+        has_receipt: Boolean(createdOrUpdatedReceipt || analysis.paymentInfo?.isPaymentReceipt),
+        is_order: Boolean(createdOrUpdatedOrder || analysis.orderInfo?.isOrder),
       };
 
       if (existingRecord) {
-        await pb.collection("email_records").update(existingRecord.id, recordPayload);
-      } else {
+        await pb.collection("email_records").update(existingRecord.id, aiFields);
+      } else if (!Number.isNaN(numericSeq) && numericSeq > 0) {
+        const recordPayload: Partial<PbEmailRecord> = {
+          user_email: userEmail,
+          seq: numericSeq,
+          folder: mailFolder,
+          subject: mailSubject,
+          sender_email: senderEmail,
+          sender_name: senderName,
+          date: mailDate,
+          ...aiFields,
+        };
         await pb.collection("email_records").create(recordPayload);
       }
     } catch (e: any) {
